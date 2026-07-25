@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>종목분석 트래커</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f6f7f9; --card:#ffffff; --card2:#fafbfc;
+  --border:#e3e7ec; --border2:#d3d9e0;
+  --text1:#1a2433; --text2:#5b6b7d; --text3:#9aa7b5;
+  --amber:#b8631f; --amber2:#d97b2e; --amber-dim:rgba(184,99,31,.08);
+  --green:#1e8e5a; --green-dim:rgba(30,142,90,.08);
+  --red:#c62f2f; --red-dim:rgba(198,47,47,.08);
+  --blue:#2563eb; --blue-dim:rgba(37,99,235,.08);
+  --purple:#7c5cd4; --purple-dim:rgba(124,92,212,.08);
+  --gray-dim:rgba(90,107,125,.08);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text1);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  font-size:13px;line-height:1.6}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.app{max-width:1180px;margin:0 auto;padding:1.75rem 1.25rem 4rem}
+
+.header{border-bottom:1px solid var(--border);padding-bottom:1.25rem;margin-bottom:1.5rem}
+.header-top{display:flex;align-items:baseline;gap:.75rem;flex-wrap:wrap}
+.title{font-size:21px;font-weight:700;letter-spacing:-.3px}
+.subtitle{font-size:12px;color:var(--text2);margin-top:4px}
+.update-time{font-family:ui-monospace,monospace;font-size:10px;color:var(--text3);margin-top:6px}
+
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:1.5rem;padding:10px 14px;
+  background:var(--card);border:1px solid var(--border);border-radius:8px;flex-wrap:wrap}
+.toolbar-note{font-size:11px;color:var(--text2);flex:1;min-width:180px}
+.btn{border-radius:6px;padding:7px 16px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border2);
+  font-family:inherit;background:var(--card2);color:var(--text2)}
+.btn.primary{background:var(--amber);color:#fff;border-color:var(--amber)}
+.btn:hover{filter:brightness(0.97)}
+.save-status{font-size:10px;color:var(--text3);font-family:ui-monospace,monospace}
+
+.section-label{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--text3);
+  margin:2rem 0 .75rem;display:flex;align-items:center;gap:8px}
+.section-label::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* Summary grid */
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.sum-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:13px 15px;
+  cursor:pointer;transition:border-color .15s, box-shadow .15s;position:relative}
+.sum-card:hover{border-color:var(--border2);box-shadow:0 1px 6px rgba(20,30,45,.06)}
+.sum-card.active{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber-dim)}
+.sum-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px}
+.sum-name{font-size:13.5px;font-weight:700}
+.sum-ticker{font-size:10px;color:var(--text3);font-family:ui-monospace,monospace;margin-top:1px}
+.badge{font-size:9.5px;padding:2px 7px;border-radius:20px;font-weight:600;letter-spacing:.02em;white-space:nowrap}
+.badge.up{background:var(--green-dim);color:var(--green)}
+.badge.down{background:var(--red-dim);color:var(--red)}
+.badge.flat{background:var(--gray-dim);color:var(--text2)}
+.sum-price-row{display:flex;gap:10px;margin-top:9px}
+.sum-price-block{flex:1}
+.sum-price-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
+.sum-price-val{font-family:ui-monospace,monospace;font-size:15px;font-weight:700;margin-top:2px}
+.sum-gap{font-family:ui-monospace,monospace;font-size:19px;font-weight:600;margin-top:9px}
+.sum-gap.buy{color:var(--green)}
+.sum-gap.sell{color:var(--red)}
+.sum-gap.hold{color:var(--text2)}
+.sum-sub{font-size:10.5px;color:var(--text3);margin-top:2px}
+.sum-signal{font-size:10.5px;font-weight:600;margin-top:8px;padding:3px 8px;border-radius:5px;display:inline-block}
+.sum-earn{font-size:9.5px;color:var(--text3);margin-top:7px;font-family:ui-monospace,monospace}
+.sum-earn.soon{color:var(--amber);font-weight:600}
+
+.sum-card.add-card{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  border:1.5px dashed var(--border2);background:transparent;min-height:118px;color:var(--text3)}
+.sum-card.add-card:hover{border-color:var(--amber);color:var(--amber);background:var(--amber-dim)}
+.add-icon{font-size:26px;font-weight:300;line-height:1}
+.add-label{font-size:11.5px;font-weight:600;margin-top:4px}
+
+/* Add-company modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(20,26,34,.4);
+  align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal-overlay.show{display:flex}
+.modal-box{background:var(--card);border-radius:12px;padding:20px 22px;width:min(480px,100%);
+  box-shadow:0 10px 40px rgba(20,30,45,.2);max-height:90vh;overflow-y:auto}
+.modal-title{font-size:15px;font-weight:700;margin-bottom:4px}
+.modal-sub{font-size:11px;color:var(--text3);margin-bottom:10px}
+
+/* Detail card */
+.detail{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.5rem 1.5rem 1.25rem;
+  margin-top:14px;display:none}
+.detail.open{display:block}
+.detail-head{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;
+  border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:14px}
+.detail-title{font-size:17px;font-weight:700}
+.detail-ticker{font-size:11px;color:var(--text3);font-family:ui-monospace,monospace;margin-left:6px}
+.detail-note{font-size:11px;color:var(--text2);margin-top:4px;max-width:640px}
+
+.field-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:6px}
+.field{background:var(--card2);border:1px solid var(--border);border-radius:7px;padding:10px 12px}
+.field-label{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:5px}
+.field input, .field select{width:100%;background:transparent;border:none;outline:none;
+  font-family:ui-monospace,monospace;font-size:15px;font-weight:600;color:var(--text1)}
+.field select{font-family:inherit;font-size:13px;cursor:pointer}
+.field-sub{font-size:9.5px;color:var(--text3);margin-top:3px}
+
+table{width:100%;border-collapse:collapse;margin-top:4px}
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px}
+thead th{background:var(--card2);padding:7px 9px;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--text3);font-weight:600;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border)}
+thead th.r{text-align:right}
+td{padding:6px 9px;border-bottom:1px solid var(--border);vertical-align:middle;font-size:12px}
+td.r{text-align:right}
+tr:last-child td{border-bottom:none}
+tr.total td{background:var(--card2);font-weight:700;border-top:1px solid var(--border2)}
+.ci{background:#fff;border:1px solid var(--border2);border-radius:4px;color:var(--text1);
+  font-family:ui-monospace,monospace;font-size:12px;padding:4px 6px;text-align:right;width:78px}
+.ci:focus{outline:none;border-color:var(--amber)}
+.ci.sm{width:56px}
+.comp{font-family:ui-monospace,monospace;font-weight:600}
+.comp.g{color:var(--green)} .comp.r{color:var(--red)} .comp.n{color:var(--text2)}
+.arrow-up::before{content:'▲ ';color:var(--green)}
+.arrow-down::before{content:'▼ ';color:var(--red)}
+.arrow-flat::before{content:'– ';color:var(--text3)}
+
+textarea{width:100%;background:#fff;border:1px solid var(--border2);border-radius:6px;padding:8px 10px;
+  font-family:inherit;font-size:12px;color:var(--text1);resize:vertical;min-height:52px;outline:none}
+textarea:focus{border-color:var(--amber)}
+
+.band-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.band-chip{background:var(--card2);border:1px solid var(--border);border-radius:7px;padding:8px 11px;flex:1;min-width:110px}
+.band-chip-label{font-size:9.5px;color:var(--text3);margin-bottom:4px}
+.band-chip-price{font-family:ui-monospace,monospace;font-size:14px;font-weight:700}
+.band-chip.buy{border-left:3px solid var(--green)}
+.band-chip.sell{border-left:3px solid var(--red)}
+.band-chip.target{border-left:3px solid var(--amber)}
+.band-chip input.ci{width:100%;margin:2px 0 6px;text-align:left}
+
+.thesis-row{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.log-list{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.log-item{font-size:11px;background:var(--card2);border:1px solid var(--border);border-radius:6px;
+  padding:7px 10px;display:flex;justify-content:space-between;gap:10px}
+.log-date{color:var(--text3);font-family:ui-monospace,monospace;white-space:nowrap;font-size:10px}
+.log-add{display:flex;gap:8px;margin-top:8px}
+.log-add textarea{min-height:36px}
+
+.footer{margin-top:2rem;padding-top:1rem;border-top:1px solid var(--border);
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:10px;color:var(--text3)}
+
+/* 체크포인트 */
+.checklist{margin-top:6px;display:flex;flex-direction:column;gap:5px}
+.check-item{display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--border);
+  border-radius:6px;padding:6px 9px;font-size:12px}
+.check-item input[type=checkbox]{width:15px;height:15px;flex-shrink:0;accent-color:var(--amber);cursor:pointer}
+.check-item span{flex:1}
+.check-done{text-decoration:line-through;color:var(--text3)}
+.check-del{background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;line-height:1;padding:0 4px}
+.check-del:hover{color:var(--red)}
+
+/* 밸류에이션 참고 이미지 */
+.image-drop{margin-top:8px;border:1.5px dashed var(--border2);border-radius:8px;padding:14px;text-align:center;
+  outline:none;transition:border-color .15s}
+.image-drop:focus, .image-drop:hover{border-color:var(--amber)}
+.image-drop-empty{font-size:11.5px;color:var(--text3);margin-bottom:8px}
+.valuation-img{max-width:100%;max-height:260px;border-radius:6px;cursor:zoom-in;display:block;margin:0 auto}
+.image-modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,20,28,.82);
+  align-items:center;justify-content:center;z-index:110;padding:24px;cursor:zoom-out}
+.image-modal-overlay.show{display:flex}
+.image-modal-overlay img{max-width:96vw;max-height:92vh;border-radius:6px}
+
+@media(max-width:640px){
+  .field-grid{grid-template-columns:repeat(2,1fr)}
+  .summary-grid{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="header">
+  <div class="header-top">
+    <span class="title">종목분석 트래커</span>
+  </div>
+  <div class="subtitle">EPS·Forward PER·투자아이디어 상태·3분할 매수매도 계획을 한 화면에서 관리 — 카드를 클릭하면 상세 입력창이 열립니다</div>
+  <div class="update-time" id="updateTime">—</div>
+</div>
+
+<div class="toolbar">
+  <span class="toolbar-note">💾 입력한 숫자는 이 브라우저에만 자동 저장됩니다. 다른 기기에서도 같은 값을 보려면 "내보내기"로 나온 텍스트를 복사해 채팅에 붙여넣고 "이걸로 확정해줘"라고 말씀하세요.</span>
+  <button class="btn primary" onclick="saveAll()">저장</button>
+  <button class="btn" onclick="loadAll()">불러오기</button>
+  <button class="btn" onclick="exportData()">내보내기 (채팅에 붙여넣기용)</button>
+  <button class="btn" onclick="resetAll()">초기화</button>
+  <span class="save-status" id="saveStatus"></span>
+</div>
+
+<div class="toolbar">
+  <span class="toolbar-note">📈 Alpha Vantage 연동 — 해외종목(NASDAQ·NYSE·NYSE Arca)만 조회됩니다. 국내종목은 API 미지원으로 직접 입력해야 합니다. 무료 키 기준 초당 1회 제한이 있어 종목별로 순서대로 조회합니다.</span>
+  <button class="btn primary" id="priceUpdateBtn" onclick="updateOverseasPrices()">해외종목 가격 업데이트</button>
+  <span class="save-status" id="priceUpdateStatus"></span>
+</div>
+
+<div class="toolbar">
+  <span class="toolbar-note">🖼️ 밸류에이션 이미지는 이 계정의 Google Drive에 저장되어 PC·모바일 어디서든 자동으로 보입니다. 이미지를 붙여넣거나 파일을 선택하기 전에 아래에서 Google 로그인을 한 번 해주세요 (기기/브라우저별로 1회).</span>
+  <button class="btn primary" id="googleLoginBtn" onclick="googleSignIn()">Google 로그인</button>
+  <span class="save-status" id="googleLoginStatus">로그인 필요</span>
+  <button class="btn" onclick="openSettingsModal()">⚙ 설정</button>
+</div>
+
+<div class="section-label">관심종목 요약</div>
+<div class="summary-grid" id="summaryGrid"></div>
+
+<div id="detailContainer"></div>
+
+<div class="footer">
+  <span>확인 필요: 초기 입력값은 참고용 플레이스홀더입니다. 실제 현재가·EPS·컨센서스는 종목별로 최신값으로 갱신해 주세요.</span>
+  <span class="mono" id="footerTime">—</span>
+</div>
+
+</div>
+
+<div class="modal-overlay" id="addModalOverlay" onclick="if(event.target===this) closeAddModal()">
+  <div class="modal-box">
+    <div class="modal-title">종목 추가</div>
+    <div class="modal-sub">필수 항목만 채워도 바로 추가되고, 나머지 숫자는 상세 카드에서 채우면 됩니다</div>
+    <div class="field-grid">
+      <div class="field"><div class="field-label">종목명 *</div><input id="add_name" type="text" placeholder="예: 한화오션"></div>
+      <div class="field"><div class="field-label">티커/종목코드 *</div><input id="add_ticker" type="text" placeholder="예: 042660"></div>
+      <div class="field"><div class="field-label">시장</div><input id="add_market" type="text" placeholder="예: KOSPI"></div>
+      <div class="field"><div class="field-label">다음 실적(예상)</div><input id="add_earn" type="text" placeholder="예: 2026-08-14"></div>
+    </div>
+    <div class="field" style="margin-top:10px">
+      <div class="field-label">모니터링 키워드 (선택)</div>
+      <textarea id="add_note" placeholder="예: 수주잔고 변화, 가이던스 변경 등 — 이 종목에서 주의 깊게 볼 뉴스 키워드"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" onclick="closeAddModal()">취소</button>
+      <button class="btn primary" onclick="submitAddCompany()">추가</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="exportModalOverlay" onclick="if(event.target===this) closeExportModal()">
+  <div class="modal-box" style="width:min(560px,100%)">
+    <div class="modal-title">내보내기 — 채팅에 붙여넣으세요</div>
+    <div class="modal-sub">아래 텍스트를 전체 복사해서 Claude와의 채팅으로 돌아가 붙여넣고 "이걸로 확정해줘"라고 말씀하시면, 새 파일을 만들어 드립니다 — 그 파일을 GitHub 저장소에 업로드(교체)하면 모든 기기에 반영됩니다.</div>
+    <textarea id="exportText" readonly style="min-height:220px;font-family:ui-monospace,monospace;font-size:11px;white-space:pre" onclick="this.select()"></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <span class="save-status" id="exportStatus" style="margin-right:auto;align-self:center"></span>
+      <button class="btn" onclick="closeExportModal()">닫기</button>
+      <button class="btn primary" onclick="copyExportText()">클립보드에 복사</button>
+    </div>
+  </div>
+</div>
+
+<div class="image-modal-overlay" id="imageModalOverlay" onclick="closeImageModal()">
+  <img id="imageModalImg" src="" alt="밸류에이션 참고 이미지">
+</div>
+
+<div class="modal-overlay" id="settingsModalOverlay" onclick="if(event.target===this) closeSettingsModal()">
+  <div class="modal-box">
+    <div class="modal-title">설정</div>
+    <div class="modal-sub">이 기기(브라우저)에만 저장되는 개인 설정입니다. 다른 사람과 공유되지 않습니다.</div>
+    <div class="field" style="margin-bottom:10px">
+      <div class="field-label">Alpha Vantage API 키 (무료)</div>
+      <input id="set_avkey" type="text" placeholder="예: ABC123XYZ" oninput="saveSetting('avKey', this.value)">
+      <div class="field-sub">alphavantage.co에서 무료로 발급받은 키를 붙여넣으세요. 하루 25회 제한입니다.</div>
+    </div>
+    <div class="field">
+      <div class="field-label">Google OAuth 클라이언트 ID</div>
+      <input id="set_googleClientId" type="text" placeholder="예: 1234567890-abc.apps.googleusercontent.com" oninput="saveSetting('googleClientId', this.value)">
+      <div class="field-sub">Google Cloud Console에서 발급받은 값입니다. 보통 한 번만 입력하면 됩니다.</div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn primary" onclick="closeSettingsModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ────────────────────────────────────────────────────────
+// 종목 데이터 정의 (기존 "주식알림시스템" 구글시트 관심종목/투자기준 탭 기준)
+// 이 배열은 "처음 열었을 때 보이는 기본값" 역할만 합니다.
+// 실제 화면에서는 STOCKS(가변 배열)를 쓰고, 종목 추가/삭제/입력은 모두 STOCKS에 반영됩니다.
+// ────────────────────────────────────────────────────────
+const YEARS = ['2025','2026','2027','2028']; // 연간 EPS 입력 기준 연도 (고정 4개)
+
+const DEFAULT_STOCKS = [
+  { id:'ls', name:'LS', ticker:'006260', market:'KOSPI',
+    nextEarnings:'2026-07-31(예상)',
+    note:'모니터링 키워드: NAV할인축소, 자사주소각, LS Electric수주, 해저케이블수주, LS MnM 황산가격, 구리 단기등락, 임원인사',
+    price:145000,
+    yearEPS:[0,0,0,0], valYearIdx:1,
+    thesisStatus:'중립', thesisDate:'', thesisNote:'',
+    buyPERs:[12.75,11.25,9.75], sellPERs:[16.5,18,19.5], log:[] },
+
+  { id:'samsungHI', name:'삼성중공업', ticker:'010140', market:'KOSPI',
+    nextEarnings:'2026-07-24',
+    note:'모니터링 키워드: LNG선 수주, FDC(부유식 데이터센터) 계약, 해양플랜트 수주, OPM 변화, 가이던스 변경, 경쟁사 수주',
+    price:0,
+    yearEPS:[0,0,0,0], valYearIdx:1,
+    thesisStatus:'중립', thesisDate:'', thesisNote:'',
+    buyPERs:[12.75,11.25,9.75], sellPERs:[16.5,18,19.5], log:[] },
+
+  { id:'skhynix', name:'SK하이닉스', ticker:'000660', market:'KOSPI',
+    nextEarnings:'2026-07-29',
+    note:'모니터링 키워드: HBM 점유율 변화, 엔비디아 공급 변경, 삼성 HBM 퀄 통과, 수출규제 강화, HBM4 양산일정, 단기 DRAM 현물가',
+    price:0,
+    yearEPS:[0,0,0,0], valYearIdx:1,
+    thesisStatus:'강화', thesisDate:'', thesisNote:'',
+    buyPERs:[10.2,9,7.8], sellPERs:[13.2,14.4,15.6], log:[] },
+
+  { id:'nvda', name:'엔비디아', ticker:'NVDA', market:'NASDAQ',
+    nextEarnings:'2026-08-27',
+    note:'모니터링 키워드: 데이터센터 매출 변화, 수출규제, ASIC 워크로드 전환, Vera Rubin 출하, 가이던스 변경, AMD 신제품 발표',
+    price:207.29,
+    yearEPS:[0,0,0,0], valYearIdx:1,
+    thesisStatus:'중립', thesisDate:'', thesisNote:'',
+    buyPERs:[29.75,26.25,22.75], sellPERs:[38.5,42,45.5],
+    log:[{date:'26.07.22', text:'Alpha Vantage 자동연동으로 현재가 207.29 반영 (2026-07-21 종가, 전일대비 +1.97%)'}] },
+
+  { id:'tsla', name:'테슬라', ticker:'TSLA', market:'NASDAQ',
+    nextEarnings:'2026-07-23',
+    note:'모니터링 키워드: 차량 인도량 변화, GPM 변화, FSD 수익화, Optimus 수주, 에너지저장 수주, 머스크 SNS 발언',
+    price:378.93,
+    yearEPS:[0,0,0,0], valYearIdx:1,
+    thesisStatus:'중립', thesisDate:'', thesisNote:'',
+    buyPERs:[76.5,67.5,58.5], sellPERs:[99,108,117],
+    log:[{date:'26.07.22', text:'Alpha Vantage 자동연동으로 현재가 378.93 반영 (2026-07-21 종가, 전일대비 +2.53%)'}] },
+
+  { id:'copx', name:'COPX (구리 ETF)', ticker:'COPX', market:'NYSE Arca',
+    nextEarnings:'해당없음(ETF)',
+    note:'모니터링 키워드: 구리가격 구조변화, 중국 부양책, 전력인프라 정책, 주요 광산 공급차질, 소규모 광산사고',
+    price:78.24,
+    yearEPS:[0,0,0,0], valYearIdx:1,
+    thesisStatus:'중립', thesisDate:'', thesisNote:'ETF는 EPS/PER 대신 구리가격·NAV 추이로 판단',
+    buyPERs:[0,0,0], sellPERs:[0,0,0],
+    log:[{date:'26.07.22', text:'Alpha Vantage 자동연동으로 현재가 78.24 반영 (2026-07-21 종가, 전일대비 +5.93% — 구리가 급등 확인 필요)'}] },
+
+  { id:'crdo', name:'CRDO', ticker:'CRDO', market:'NASDAQ',
+    nextEarnings:'확인 필요',
+    note:'모니터링 키워드: 신규 하이퍼스케일러 고객, production order, GPM 변화, 가이던스 변경, 광학 DSP 수주',
+    price:223.87,
+    yearEPS:[0,0,0,0], valYearIdx:1,
+    thesisStatus:'강화', thesisDate:'', thesisNote:'',
+    buyPERs:[34,30,26], sellPERs:[44,48,52],
+    log:[{date:'26.07.22', text:'Alpha Vantage 자동연동으로 현재가 223.87 반영 (2026-07-21 종가, 전일대비 +5.56%)'}] },
+
+  { id:'joby', name:'JOBY', ticker:'JOBY', market:'NYSE',
+    nextEarnings:'확인 필요',
+    note:'모니터링 키워드: FAA 인증단계 업데이트, 현금소진 속도, 도요타 생산계약, 수주/예약, 비행사고, 경쟁사 시험비행',
+    price:7.66,
+    yearEPS:[0,0,0,0], valYearIdx:1,
+    thesisStatus:'중립', thesisDate:'', thesisNote:'상용화 전 단계 — EPS 흑자전환 전까지는 현금소진 속도/마일스톤 중심으로 판단',
+    buyPERs:[0,0,0], sellPERs:[0,0,0],
+    log:[{date:'26.07.22', text:'Alpha Vantage 자동연동으로 현재가 7.66 반영 (2026-07-21 종가, 전일대비 +2.54%)'}] },
+
+  { id:'mu', name:'마이크론', ticker:'MU', market:'NASDAQ',
+    nextEarnings:'2026-09-23',
+    note:'모니터링 키워드: HBM 점유율 변화, GPM 변화, 가이던스 변경, HBM4 양산, 중국 수출규제, 단기 DRAM 현물가',
+    price:970.82,
+    yearEPS:[0,0,0,0], valYearIdx:1,
+    thesisStatus:'강화', thesisDate:'', thesisNote:'',
+    buyPERs:[11.9,10.5,9.1], sellPERs:[15.4,16.8,18.2],
+    log:[{date:'26.07.22', text:'Alpha Vantage 자동연동으로 현재가 970.82 반영 (2026-07-21 종가, 전일대비 +12.17% — 급등폭이 커서 확인 필요, 최근 액면분할 여부 등 점검 권장)'}] },
+
+  { id:'fslr', name:'FSLR', ticker:'FSLR', market:'NASDAQ',
+    nextEarnings:'2026-07-31',
+    note:'모니터링 키워드 미입력 — 상세 카드에서 채워주세요',
+    price:205,
+    yearEPS:[0,17,23,27], valYearIdx:1,
+    thesisStatus:'중립', thesisDate:'', thesisNote:'',
+    buyPERs:[14.45,12.75,11.05], sellPERs:[18.7,20.4,22.1],
+    log:[{date:'26.07.22', text:'채팅에서 내보내기 텍스트로 확정 반영 (name/ticker/market 대문자로 표기 정리)'}],
+    checklist:[{text:'SC피니쉬공장 현황(지연인지, 유지인지), SECTION232, SECTION 122, 45X 등 법안 결과', checked:false}],
+    valuationImage:'', valuationImageDriveId:'12VMtEJEOezHtSSeYiYH1-I1IBzf9dvoY' },
+];
+
+function cloneStocks(arr){ return arr.map(s=>JSON.parse(JSON.stringify(s))); }
+let STOCKS = cloneStocks(DEFAULT_STOCKS); // 실제로 화면이 읽고 쓰는 가변 배열
+
+const THESIS_COLOR = { '강화':'up', '중립':'flat', '훼손':'down' };
+let openId = null;
+
+// 입력 중 재렌더링을 해도 커서/포커스를 잃지 않도록 감싸는 헬퍼.
+// (재렌더링 없이 못 지나가는 이유: 계산값 표시를 갱신해야 하므로)
+function withFocusPreserved(fn){
+  const active = document.activeElement;
+  const activeId = active && active.id ? active.id : null;
+  const selStart = (active && typeof active.selectionStart === 'number') ? active.selectionStart : null;
+  const selEnd = (active && typeof active.selectionEnd === 'number') ? active.selectionEnd : null;
+  fn();
+  if(activeId){
+    const el = document.getElementById(activeId);
+    if(el){
+      el.focus({preventScroll:true});
+      if(selStart!=null && el.setSelectionRange){
+        try{ el.setSelectionRange(selStart, selEnd); }catch(e){}
+      }
+    }
+  }
+}
+
+function fmt(n){ if(n===undefined||n===null||isNaN(n)) return '—'; return Math.round(n).toLocaleString(); }
+function fmt2(n){ if(n===undefined||n===null||isNaN(n)) return '—'; return n.toFixed(2); }
+function pct(n){ if(n===undefined||n===null||isNaN(n)) return '—'; const s=n>=0?'+':''; return s+n.toFixed(1)+'%'; }
+
+function fwdEPS(s){
+  const idx = (s.valYearIdx!=null && s.valYearIdx>=0 && s.valYearIdx<4) ? s.valYearIdx : 1;
+  return (s.yearEPS && s.yearEPS[idx]) || 0;
+}
+// 매수/매도 1~3차는 이제 %가 아니라 "차수별로 직접 입력한 목표 PER"로 산정합니다.
+// 가격 = 기준연도 EPS × 해당 차수 PER. 입력 순서(1/2/3차)를 그대로 표시에 씁니다.
+function buyPriceArr(s){ const f=fwdEPS(s); return (s.buyPERs||[0,0,0]).map(per=>f*(per||0)); }
+function sellPriceArr(s){ const f=fwdEPS(s); return (s.sellPERs||[0,0,0]).map(per=>f*(per||0)); }
+function primaryTarget(s){ return sellPriceArr(s)[0] || 0; } // "1차 목표주가" = 매도 1차 PER 기준가
+function currentFPER(s){ const f=fwdEPS(s); return f>0 ? s.price/f : NaN; }
+function gapPct(s){ const t=primaryTarget(s); return t>0 ? (s.price-t)/t*100 : NaN; }
+
+function signal(s){
+  const buyP = buyPriceArr(s).slice().sort((a,b)=>a-b);   // 오름차순: [가장낮은가, 중간, 가장높은가]
+  const sellP = sellPriceArr(s).slice().sort((a,b)=>a-b);
+  const hasValuation = buyP.some(v=>v>0) || sellP.some(v=>v>0);
+  if(!hasValuation) return {label:'밸류에이션 미설정', cls:'hold'};
+  const p = s.price;
+  if(p<=0) return {label:'현재가 입력 필요', cls:'hold'};
+  if(buyP[0]>0 && p <= buyP[0]) return {label:'3차 매수 구간 (강한 매수)', cls:'buy'};
+  if(buyP[1]>0 && p <= buyP[1]) return {label:'2차 매수 구간', cls:'buy'};
+  if(buyP[2]>0 && p <= buyP[2]) return {label:'1차 매수 구간', cls:'buy'};
+  if(sellP[0]<=0 || p < sellP[0]) return {label:'목표가 대비 관망', cls:'hold'};
+  if(p < sellP[1]) return {label:'1차 매도 구간', cls:'sell'};
+  if(p < sellP[2]) return {label:'2차 매도 구간', cls:'sell'};
+  return {label:'3차 매도 구간 (전량 익절 검토)', cls:'sell'};
+}
+
+function isEarningsSoon(s){
+  const m = s.nextEarnings.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if(!m) return false;
+  const d = new Date(+m[1], +m[2]-1, +m[3]);
+  const now = new Date();
+  const diff = (d-now)/86400000;
+  return diff>=0 && diff<=10;
+}
+
+function renderSummary(){
+  const grid = document.getElementById('summaryGrid');
+  grid.innerHTML = STOCKS.map(s=>{
+    const g = gapPct(s);
+    const t1 = primaryTarget(s);
+    const badgeCls = THESIS_COLOR[s.thesisStatus] || 'flat';
+    const gapCls = isNaN(g) ? 'hold' : (g<0? 'buy':(g>15?'sell':'hold'));
+    const earnCls = isEarningsSoon(s) ? 'soon' : '';
+    return `<div class="sum-card ${openId===s.id?'active':''}" onclick="toggleDetail('${s.id}')">
+      <div class="sum-top">
+        <div><div class="sum-name">${s.name}</div><div class="sum-ticker">${s.ticker} · ${s.market}</div></div>
+        <span class="badge ${badgeCls}">${s.thesisStatus}</span>
+      </div>
+      <div class="sum-price-row">
+        <div class="sum-price-block">
+          <div class="sum-price-label">현재주가</div>
+          <div class="sum-price-val">${s.price>0?fmt(s.price):'—'}</div>
+        </div>
+        <div class="sum-price-block">
+          <div class="sum-price-label">1차 목표주가</div>
+          <div class="sum-price-val">${t1>0?fmt(t1):'—'}</div>
+        </div>
+      </div>
+      <div class="sum-gap ${gapCls}">${isNaN(g)?'—':pct(g)}</div>
+      <div class="sum-sub">현재가 대비 1차 목표주가 괴리율</div>
+      <div class="sum-earn ${earnCls}">다음 실적: ${s.nextEarnings}${earnCls?' ⚠ 임박':''}</div>
+    </div>`;
+  }).join('') + `<div class="sum-card add-card" onclick="openAddModal()">
+      <div class="add-icon">+</div>
+      <div class="add-label">종목 추가</div>
+    </div>`;
+}
+
+function toggleDetail(id){
+  openId = (openId===id) ? null : id;
+  renderSummary();
+  renderDetails();
+  if(openId){
+    setTimeout(()=>{ document.getElementById('detail_'+openId)?.scrollIntoView({behavior:'smooth',block:'start'}); },50);
+    fetchImageFromDrive(openId); // 이 기기에 이미지 캐시가 없고 Drive ID만 있으면 자동으로 가져옴
+  }
+}
+
+function yearRow(s){
+  return YEARS.map((lab,i)=>{
+    const prev = i>0 ? s.yearEPS[i-1] : null;
+    const cur = s.yearEPS[i];
+    let trendHtml = '<span class="comp n">—</span>';
+    if(prev!==null && prev!==0 && cur!==undefined){
+      const chg = (cur-prev)/Math.abs(prev)*100;
+      const cls = chg>0.5?'g':(chg<-0.5?'r':'n');
+      const arrowCls = chg>0.5?'arrow-up':(chg<-0.5?'arrow-down':'arrow-flat');
+      trendHtml = `<span class="comp ${cls} ${arrowCls}">${pct(chg)}</span>`;
+    }
+    const isBasis = ((s.valYearIdx!=null?s.valYearIdx:1) === i);
+    return `<td>${lab}${isBasis?' <span class="badge flat" style="font-size:8.5px">기준</span>':''}</td>
+      <td class="r"><input class="ci" type="text" inputmode="decimal" value="${cur||''}" placeholder="0"
+        id="in_yearEPS_${s.id}_${i}"
+        oninput="updateVal('${s.id}','yearEPS',${i},this.value)"></td>
+      <td class="r">${trendHtml}</td>`;
+  });
+}
+
+function renderDetails(){
+  const c = document.getElementById('detailContainer');
+  if(!openId){ c.innerHTML=''; return; }
+  const s = STOCKS.find(x=>x.id===openId);
+  const fEPS = fwdEPS(s);
+  const fper = currentFPER(s);
+  const t1 = primaryTarget(s);
+  const g = gapPct(s);
+  const sig = signal(s);
+  const buyP = buyPriceArr(s);
+  const sellP = sellPriceArr(s);
+
+  c.innerHTML = `
+  <div class="detail open" id="detail_${s.id}">
+    <div class="detail-head">
+      <div>
+        <span class="detail-title">${s.name}<span class="detail-ticker">${s.ticker} · ${s.market}</span></span>
+        <div class="detail-note">${s.note}</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="badge ${sig.cls==='buy'?'up':sig.cls==='sell'?'down':'flat'}">${sig.label}</span>
+        <button class="btn" style="font-size:10px;padding:4px 10px" onclick="removeCompany('${s.id}')">종목 삭제</button>
+      </div>
+    </div>
+
+    <div class="section-label">기준 정보</div>
+    <div class="field-grid">
+      <div class="field">
+        <div class="field-label">현재가</div>
+        <input type="text" inputmode="decimal" value="${s.price||''}" placeholder="0" id="in_price_${s.id}" oninput="updateField('${s.id}','price',this.value)">
+        <div class="field-sub">다음 실적: ${s.nextEarnings}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">밸류에이션 기준연도 EPS (자동)</div>
+        <div class="mono" style="font-size:15px;font-weight:600">${fmt2(fEPS)}</div>
+        <div class="field-sub">아래 표에서 "기준" 연도로 지정한 EPS</div>
+      </div>
+      <div class="field">
+        <div class="field-label">현재 Forward PER (자동)</div>
+        <div class="mono" style="font-size:15px;font-weight:600">${isNaN(fper)?'—':fper.toFixed(1)+'배'}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">1차 목표주가 (자동)</div>
+        <div class="mono" style="font-size:15px;font-weight:600">${t1>0?fmt(t1):'—'}</div>
+        <div class="field-sub">매도 1차 PER 기준</div>
+      </div>
+    </div>
+
+    <div class="section-label">EPS 트래킹 — 연도별</div>
+    <div class="field" style="max-width:260px;margin-bottom:8px">
+      <div class="field-label">밸류에이션 기준연도</div>
+      <select id="in_valYearIdx_${s.id}" onchange="updateField('${s.id}','valYearIdx',this.value)">
+        ${YEARS.map((y,i)=>`<option value="${i}" ${((s.valYearIdx!=null?s.valYearIdx:1)===i)?'selected':''}>${y}년</option>`).join('')}
+      </select>
+      <div class="field-sub">목표주가·3분할가 계산에 쓸 연도를 고르세요 (보통 올해나 내년)</div>
+    </div>
+    <div class="table-wrap">
+      <table><thead><tr><th>연도</th><th class="r">EPS</th><th class="r">전년 대비</th></tr></thead>
+      <tbody><tr>${yearRow(s).join('</tr><tr>')}</tr></tbody></table>
+    </div>
+
+    <div class="section-label">투자아이디어 상태</div>
+    <div class="thesis-row">
+      <div class="field" style="min-width:160px">
+        <div class="field-label">상태</div>
+        <select id="in_thesisStatus_${s.id}" onchange="updateField('${s.id}','thesisStatus',this.value)">
+          <option value="강화" ${s.thesisStatus==='강화'?'selected':''}>강화</option>
+          <option value="중립" ${s.thesisStatus==='중립'?'selected':''}>중립</option>
+          <option value="훼손" ${s.thesisStatus==='훼손'?'selected':''}>훼손</option>
+        </select>
+      </div>
+      <div class="field" style="min-width:160px">
+        <div class="field-label">최종 변경일</div>
+        <input type="date" value="${s.thesisDate||''}" id="in_thesisDate_${s.id}" oninput="updateField('${s.id}','thesisDate',this.value)">
+      </div>
+    </div>
+    <textarea id="in_thesisNote_${s.id}" placeholder="강화/훼손 판단 근거를 적어두면 다음에 볼 때 바로 기억납니다" oninput="updateField('${s.id}','thesisNote',this.value)">${s.thesisNote||''}</textarea>
+
+    <div class="section-label">다음 실적 체크포인트</div>
+    <div class="field-sub" style="margin-bottom:6px">다음 실적 발표 때 반드시 확인할 지표를 적어두세요. 체크박스로 확인 여부를 표시할 수 있습니다.</div>
+    <div class="checklist">
+      ${(s.checklist||[]).map((c,i)=>`
+      <div class="check-item">
+        <input type="checkbox" ${c.checked?'checked':''} onchange="toggleCheckItem('${s.id}',${i})">
+        <span class="${c.checked?'check-done':''}">${c.text}</span>
+        <button class="check-del" onclick="removeCheckItem('${s.id}',${i})">✕</button>
+      </div>`).join('') || '<div class="field-sub">아직 등록된 체크포인트가 없습니다</div>'}
+    </div>
+    <div class="log-add">
+      <textarea id="checkInput_${s.id}" placeholder="예: 데이터센터향 매출 비중, 가이던스 상향 여부, 재고 수준"></textarea>
+      <button class="btn primary" style="height:36px;white-space:nowrap" onclick="addCheckItem('${s.id}')">체크포인트 추가</button>
+    </div>
+
+    <div class="section-label">3분할 매수/매도 계획 — 차수별 목표 PER 직접 입력</div>
+    <div class="field-sub" style="margin-bottom:8px">각 차수의 목표 PER을 입력하면 "기준연도 EPS × 그 PER"로 가격이 자동 계산됩니다. 1차 목표주가(=매도 1차 가격)는 현재가 대비 ${isNaN(g)?'—':pct(g)}입니다.</div>
+    <div class="band-row">
+      ${[0,1,2].map(i=>`
+      <div class="band-chip buy">
+        <div class="band-chip-label">매수 ${i+1}차 PER</div>
+        <input class="ci sm" type="text" inputmode="decimal" value="${s.buyPERs[i]||''}" placeholder="0"
+          id="in_buyPERs_${s.id}_${i}" oninput="updateVal('${s.id}','buyPERs',${i},this.value)">
+        <div class="band-chip-price">${buyP[i]>0?fmt(buyP[i]):'—'}</div>
+      </div>`).join('')}
+    </div>
+    <div class="band-row">
+      ${[0,1,2].map(i=>`
+      <div class="band-chip sell">
+        <div class="band-chip-label">매도 ${i+1}차 PER</div>
+        <input class="ci sm" type="text" inputmode="decimal" value="${s.sellPERs[i]||''}" placeholder="0"
+          id="in_sellPERs_${s.id}_${i}" oninput="updateVal('${s.id}','sellPERs',${i},this.value)">
+        <div class="band-chip-price">${sellP[i]>0?fmt(sellP[i]):'—'}</div>
+      </div>`).join('')}
+    </div>
+    <div class="field-sub" style="margin:8px 0 4px">밸류에이션 참고 이미지 (PER밴드 캡처 등) — 화면 아무 곳에서나 Ctrl+V로 붙여넣거나, 아래 버튼으로 파일을 선택하세요. Drive에 저장되어 PC/모바일 모두에서 볼 수 있습니다</div>
+    <div class="image-drop" id="imgDrop_${s.id}" tabindex="0">
+      ${s.valuationImage ? `
+        <img class="valuation-img" src="${s.valuationImage}" onclick="openImageModal('${s.id}')">
+        <div style="margin-top:6px;display:flex;gap:10px;justify-content:center;align-items:center">
+          <button class="check-del" style="font-size:11px" onclick="removeValuationImage('${s.id}')">이미지 삭제</button>
+          ${s.valuationImageDriveId ? `<a href="https://drive.google.com/file/d/${s.valuationImageDriveId}/view" target="_blank" rel="noopener" style="font-size:11px">Drive에서 보기</a>` : ''}
+        </div>
+      ` : s.valuationImageDriveId ? `
+        <div class="image-drop-empty">이미지 불러오는 중... (Drive에서 가져옵니다)</div>
+        <a href="https://drive.google.com/file/d/${s.valuationImageDriveId}/view" target="_blank" rel="noopener" style="font-size:11px">바로 안 보이면 여기서 Drive로 보기</a>
+      ` : `<div class="image-drop-empty">이미지 없음</div>
+        <button class="btn" style="margin-top:4px" onclick="document.getElementById('imgFile_${s.id}').click()">파일 선택</button>`}
+    </div>
+    <div class="field-sub" id="imgStatus_${s.id}" style="margin-top:4px;min-height:14px"></div>
+    <input type="file" accept="image/*" id="imgFile_${s.id}" style="display:none" onchange="handleImageFile('${s.id}',this.files[0])">
+
+    <div class="section-label">변경 로그</div>
+    <div class="log-list">
+      ${(s.log||[]).slice().reverse().map(l=>`<div class="log-item"><span>${l.text}</span><span class="log-date">${l.date}</span></div>`).join('') || '<div class="field-sub">아직 기록 없음</div>'}
+    </div>
+    <div class="log-add">
+      <textarea id="logInput_${s.id}" placeholder="예: 26Q2 실적 EPS 컨센서스 상회, 가이던스 상향 → 목표PER 13→15배 조정"></textarea>
+      <button class="btn primary" style="height:36px;white-space:nowrap" onclick="addLog('${s.id}')">기록 추가</button>
+    </div>
+  </div>`;
+}
+
+function updateField(id, key, val){
+  const s = STOCKS.find(x=>x.id===id);
+  if(key==='price') s[key] = parseFloat(val)||0;
+  else if(key==='valYearIdx') s[key] = parseInt(val,10)||0;
+  else s[key] = val;
+  withFocusPreserved(()=>{ renderSummary(); renderDetails(); });
+  touchTime();
+}
+function updateVal(id, arrKey, idx, val){
+  const s = STOCKS.find(x=>x.id===id);
+  s[arrKey][idx] = parseFloat(val)||0;
+  withFocusPreserved(()=>{ renderSummary(); renderDetails(); });
+  touchTime();
+}
+function addLog(id){
+  const s = STOCKS.find(x=>x.id===id);
+  const ta = document.getElementById('logInput_'+id);
+  if(!ta.value.trim()) return;
+  const now = new Date();
+  const ds = now.toLocaleDateString('ko-KR',{year:'2-digit',month:'2-digit',day:'2-digit'});
+  s.log = s.log || [];
+  s.log.push({date:ds, text:ta.value.trim()});
+  ta.value='';
+  renderDetails();
+  saveAll();
+}
+
+// ── 다음 실적 체크포인트 ──
+function addCheckItem(id){
+  const s = STOCKS.find(x=>x.id===id);
+  const ta = document.getElementById('checkInput_'+id);
+  if(!ta.value.trim()) return;
+  s.checklist = s.checklist || [];
+  s.checklist.push({text:ta.value.trim(), checked:false});
+  ta.value='';
+  renderDetails();
+  saveAll();
+}
+function toggleCheckItem(id, idx){
+  const s = STOCKS.find(x=>x.id===id);
+  if(!s.checklist || !s.checklist[idx]) return;
+  s.checklist[idx].checked = !s.checklist[idx].checked;
+  renderDetails();
+  saveAll();
+}
+function removeCheckItem(id, idx){
+  const s = STOCKS.find(x=>x.id===id);
+  if(!s.checklist) return;
+  s.checklist.splice(idx,1);
+  renderDetails();
+  saveAll();
+}
+
+// ── 설정 (Alpha Vantage 키, Google OAuth 클라이언트 ID) — 이 기기에만 저장 ──
+const DEFAULT_GOOGLE_CLIENT_ID = '95765774730-srka6ufr4ik78riavmgs3cp39t6caa5s.apps.googleusercontent.com'; // OAuth 클라이언트 ID는 공개돼도 안전합니다
+const SETTINGS_KEY = 'company_tracker_settings_v1';
+let SETTINGS = { avKey:'', googleClientId: DEFAULT_GOOGLE_CLIENT_ID };
+function loadSettings(){
+  try{
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      SETTINGS = Object.assign({avKey:'', googleClientId: DEFAULT_GOOGLE_CLIENT_ID}, parsed);
+      if(!SETTINGS.googleClientId) SETTINGS.googleClientId = DEFAULT_GOOGLE_CLIENT_ID;
+    }
+  }catch(e){}
+}
+function saveSetting(key, val){
+  SETTINGS[key] = val;
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(SETTINGS));
+}
+function openSettingsModal(){
+  document.getElementById('set_avkey').value = SETTINGS.avKey || '';
+  document.getElementById('set_googleClientId').value = SETTINGS.googleClientId || '';
+  document.getElementById('settingsModalOverlay').classList.add('show');
+}
+function closeSettingsModal(){
+  document.getElementById('settingsModalOverlay').classList.remove('show');
+}
+
+// ── Google 로그인 (Google Identity Services, 클라이언트 사이드 전용 — 서버 불필요) ──
+let googleAccessToken = null;
+let googleTokenClient = null;
+function ensureGoogleTokenClient(){
+  if(!window.google || !google.accounts || !google.accounts.oauth2) return null;
+  if(!SETTINGS.googleClientId) return null;
+  if(!googleTokenClient || googleTokenClient.__clientId !== SETTINGS.googleClientId){
+    googleTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: SETTINGS.googleClientId,
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: (resp)=>{
+        if(resp && resp.access_token){
+          googleAccessToken = resp.access_token;
+          updateGoogleLoginStatus(true);
+        } else {
+          updateGoogleLoginStatus(false);
+        }
+      }
+    });
+    googleTokenClient.__clientId = SETTINGS.googleClientId;
+  }
+  return googleTokenClient;
+}
+function googleSignIn(){
+  if(!SETTINGS.googleClientId){
+    alert('먼저 설정(⚙)에서 Google OAuth 클라이언트 ID를 입력해주세요.');
+    openSettingsModal();
+    return;
+  }
+  const client = ensureGoogleTokenClient();
+  if(!client){
+    alert('Google 로그인 스크립트를 아직 불러오는 중입니다. 몇 초 후 다시 눌러주세요.');
+    return;
+  }
+  client.requestAccessToken({ prompt: googleAccessToken ? '' : 'consent' });
+}
+function updateGoogleLoginStatus(loggedIn){
+  const el = document.getElementById('googleLoginStatus');
+  if(!el) return;
+  if(loggedIn){ el.textContent = '로그인됨 ✓'; el.style.color = 'var(--green)'; }
+  else{ el.textContent = '로그인 필요'; el.style.color = 'var(--text3)'; }
+}
+
+// ── 밸류에이션 참고 이미지 (Google Drive REST API 직접 호출 — Cowork 없이도 PC/모바일 어디서든 동작) ──
+const MAX_IMG_WIDTH = 900;
+function showImgStatus(id, msg){
+  const el = document.getElementById('imgStatus_'+id);
+  if(el){ el.textContent = msg; setTimeout(()=>{ if(el.textContent===msg) el.textContent=''; }, 4000); }
+}
+function storeResizedImage(id, dataUrl){
+  const img = new Image();
+  img.onload = function(){
+    let w = img.width, h = img.height;
+    if(w > MAX_IMG_WIDTH){ h = Math.round(h * MAX_IMG_WIDTH / w); w = MAX_IMG_WIDTH; }
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    const resized = canvas.toDataURL('image/jpeg', 0.82);
+    const s = STOCKS.find(x=>x.id===id);
+    if(!s) return;
+    s.valuationImage = resized; // 이 기기에서 바로 보이도록 로컬 캐시
+    renderDetails(); saveAll();
+    uploadImageToDrive(id, resized);
+  };
+  img.onerror = function(){ showImgStatus(id, '이미지를 불러오지 못했습니다 (파일 손상 가능)'); };
+  img.src = dataUrl;
+}
+function dataUrlToBlob(dataUrl){
+  const [meta, base64] = dataUrl.split(',');
+  const mime = (meta.match(/data:(.*?);base64/) || [,'image/jpeg'])[1];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], {type:mime});
+}
+async function uploadImageToDrive(id, dataUrl){
+  const s = STOCKS.find(x=>x.id===id);
+  if(!s) return;
+  if(!googleAccessToken){
+    showImgStatus(id, '이미지가 이 기기에 저장되었습니다 (Drive 동기화를 하려면 상단에서 Google 로그인을 해주세요)');
+    return;
+  }
+  showImgStatus(id, '이미지 저장 중 (Drive 업로드)...');
+  try{
+    const blob = dataUrlToBlob(dataUrl);
+    const metadata = { name: `valuation_${id}_${Date.now()}.jpg`, mimeType:'image/jpeg' };
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'}));
+    form.append('file', blob);
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + googleAccessToken },
+      body: form
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if(data && data.id){
+      s.valuationImageDriveId = data.id;
+      saveAll();
+      showImgStatus(id, '이미지가 저장되었습니다 (Drive 동기화 완료)');
+    } else {
+      showImgStatus(id, '이 기기에는 저장됐지만 Drive 업로드 응답을 해석하지 못했습니다');
+    }
+  }catch(err){
+    showImgStatus(id, '이 기기에는 저장됐지만 Drive 업로드에는 실패했습니다 (' + (err && err.message || '오류') + ')');
+  }
+}
+async function fetchImageFromDrive(id){
+  const s = STOCKS.find(x=>x.id===id);
+  if(!s || !s.valuationImageDriveId || s.valuationImage) return;
+  if(!googleAccessToken) return; // 로그인 전이면 조용히 넘어감 — 화면의 "Drive에서 보기" 링크로 대체 확인 가능
+  try{
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${s.valuationImageDriveId}?alt=media`, {
+      headers: { 'Authorization': 'Bearer ' + googleAccessToken }
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const reader = new FileReader();
+    reader.onload = () => {
+      s.valuationImage = reader.result;
+      saveAll();
+      renderDetails();
+    };
+    reader.readAsDataURL(blob);
+  }catch(err){ /* 실패해도 화면의 Drive 링크로 대체 확인 가능 */ }
+}
+function handleImageFile(id, file){
+  if(!file || !file.type.startsWith('image/')){ showImgStatus(id, '이미지 파일이 아닙니다'); return; }
+  showImgStatus(id, '이미지 불러오는 중...');
+  const reader = new FileReader();
+  reader.onload = e => storeResizedImage(id, e.target.result);
+  reader.onerror = () => showImgStatus(id, '이미지를 읽지 못했습니다');
+  reader.readAsDataURL(file);
+}
+// 화면 어디서든 Ctrl/Cmd+V로 붙여넣으면, 현재 열려있는 종목의 밸류에이션 이미지 칸에 반영됩니다.
+// (단, 다른 입력칸에 포커스가 있고 그 칸에 텍스트를 붙여넣는 경우는 그대로 두고, 클립보드에 이미지가 있을 때만 동작합니다.)
+document.addEventListener('paste', function(e){
+  if(!openId) return;
+  const items = e.clipboardData && e.clipboardData.items;
+  if(!items || !items.length){ return; }
+  let found = false;
+  for(const item of items){
+    if(item.type && item.type.startsWith('image/')){
+      const file = item.getAsFile();
+      if(file){ found = true; handleImageFile(openId, file); }
+      break;
+    }
+  }
+  if(!found){
+    // 클립보드에 이미지가 없을 뿐, 다른 텍스트 붙여넣기는 방해하지 않습니다.
+  }
+});
+function removeValuationImage(id){
+  const s = STOCKS.find(x=>x.id===id);
+  if(s){ s.valuationImage=''; s.valuationImageDriveId=''; renderDetails(); saveAll(); }
+}
+function openImageModal(id){
+  const s = STOCKS.find(x=>x.id===id);
+  if(!s || !s.valuationImage) return;
+  document.getElementById('imageModalImg').src = s.valuationImage;
+  document.getElementById('imageModalOverlay').classList.add('show');
+}
+function closeImageModal(){
+  document.getElementById('imageModalOverlay').classList.remove('show');
+}
+
+// ── 해외종목 가격 자동 업데이트 (Alpha Vantage REST API 직접 호출) ──
+const AV_MARKETS = ['NASDAQ','NYSE','NYSE Arca'];
+
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+async function updateOverseasPrices(){
+  const statusEl = document.getElementById('priceUpdateStatus');
+  const btn = document.getElementById('priceUpdateBtn');
+  if(!SETTINGS.avKey){
+    statusEl.textContent = '먼저 설정(⚙)에서 Alpha Vantage API 키를 입력해주세요.';
+    statusEl.style.color = 'var(--red)';
+    openSettingsModal();
+    return;
+  }
+  const targets = STOCKS.filter(s => AV_MARKETS.includes(s.market));
+  if(targets.length===0){
+    statusEl.textContent = '자동 업데이트 대상 해외종목이 없습니다.';
+    return;
+  }
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+
+  for(let i=0;i<targets.length;i++){
+    const s = targets[i];
+    statusEl.style.color = 'var(--text2)';
+    statusEl.textContent = `${s.name}(${s.ticker}) 조회 중… (${i+1}/${targets.length})`;
+    try{
+      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(s.ticker)}&apikey=${encodeURIComponent(SETTINGS.avKey)}`;
+      const res = await fetch(url);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      const gq = data && data['Global Quote'];
+      const priceStr = gq && gq['05. price'];
+      const changePctStr = gq && gq['10. change percent'];
+      const price = priceStr!=null ? parseFloat(priceStr) : NaN;
+
+      if(data && (data['Note'] || data['Information'])){
+        statusEl.textContent = `${s.name}: API 호출 한도 초과 또는 오류 — 나머지 종목은 건너뜁니다`;
+        statusEl.style.color = 'var(--red)';
+        break; // 한도 초과면 이후 요청도 다 실패하므로 중단
+      } else if(!isNaN(price) && price>0){
+        s.price = price;
+        s.log = s.log || [];
+        const now = new Date();
+        const ds = now.toLocaleDateString('ko-KR',{year:'2-digit',month:'2-digit',day:'2-digit'});
+        const chg = changePctStr ? ` (전일대비 ${(''+changePctStr).replace('%','')}%)` : '';
+        s.log.push({date:ds, text:`자동 업데이트: 현재가 ${price}${chg}`});
+      } else {
+        statusEl.textContent = `${s.name}: 응답 형식을 해석하지 못함 — 건너뜀`;
+        statusEl.style.color = 'var(--amber)';
+      }
+    } catch(e){
+      statusEl.textContent = `${s.name}: 조회 실패 (${(e && e.message) || e})`;
+      statusEl.style.color = 'var(--red)';
+    }
+    renderSummary();
+    if(openId===s.id) renderDetails();
+    if(i < targets.length-1) await sleep(1200); // 무료 티어 초당 1회 제한 대응
+  }
+
+  saveAll();
+  btn.disabled = false;
+  btn.style.opacity = '1';
+  statusEl.style.color = 'var(--green)';
+  statusEl.textContent = `업데이트 완료: ${new Date().toLocaleString('ko-KR')} (해외 ${targets.length}종목)`;
+  touchTime();
+}
+
+// ── 종목 추가 / 삭제 ──
+function openAddModal(){
+  document.getElementById('addModalOverlay').classList.add('show');
+  setTimeout(()=>document.getElementById('add_name').focus(), 30);
+}
+function closeAddModal(){
+  document.getElementById('addModalOverlay').classList.remove('show');
+  ['add_name','add_ticker','add_market','add_earn','add_note'].forEach(id=>{ document.getElementById(id).value=''; });
+}
+function slugify(str){
+  const base = (str||'').toLowerCase().replace(/[^a-z0-9가-힣]+/g,'_').replace(/^_+|_+$/g,'');
+  return base || ('stock_'+Date.now());
+}
+function submitAddCompany(){
+  const name = document.getElementById('add_name').value.trim();
+  const ticker = document.getElementById('add_ticker').value.trim();
+  const market = document.getElementById('add_market').value.trim() || '확인 필요';
+  const earn = document.getElementById('add_earn').value.trim() || '확인 필요';
+  const note = document.getElementById('add_note').value.trim() || '모니터링 키워드 미입력 — 상세 카드에서 채워주세요';
+  if(!name || !ticker){ alert('종목명과 티커/종목코드는 필수입니다.'); return; }
+  let base = slugify(ticker || name), uid = base, n = 2;
+  while(STOCKS.find(x=>x.id===uid)){ uid = base+'_'+(n++); }
+  STOCKS.push({
+    id: uid, name, ticker, market, nextEarnings: earn, note,
+    price: 0,
+    yearEPS:[0,0,0,0], valYearIdx:1,
+    thesisStatus:'중립', thesisDate:'', thesisNote:'',
+    checklist:[], valuationImage:'', valuationImageDriveId:'',
+    buyPERs:[0,0,0], sellPERs:[0,0,0], log:[]
+  });
+  closeAddModal();
+  openId = uid;
+  renderSummary();
+  renderDetails();
+  saveAll();
+  setTimeout(()=>{ document.getElementById('detail_'+uid)?.scrollIntoView({behavior:'smooth',block:'start'}); },50);
+}
+function removeCompany(id){
+  const s = STOCKS.find(x=>x.id===id);
+  if(!s) return;
+  if(!confirm(`"${s.name}" 종목을 목록에서 삭제할까요? 입력해 둔 데이터도 함께 사라집니다.`)) return;
+  STOCKS = STOCKS.filter(x=>x.id!==id);
+  if(openId===id) openId = null;
+  renderSummary(); renderDetails(); saveAll();
+}
+
+// ── 내보내기 (다른 기기 동기화를 위해 채팅에 붙여넣을 텍스트 생성) ──
+// 밸류에이션 이미지의 실제 데이터(용량이 큰 base64)는 제외하고, Drive 파일 ID(짧은 문자열)만 포함합니다.
+// 이미지 원본은 Drive에 저장되어 있으므로 ID만 있으면 다른 기기에서 자동으로 다시 불러옵니다.
+function exportData(){
+  const exportable = STOCKS.map(s=>{
+    const copy = Object.assign({}, s);
+    delete copy.valuationImage; // 로컬 캐시(대용량)는 내보내지 않음 — Drive ID로 충분
+    return copy;
+  });
+  document.getElementById('exportText').value = JSON.stringify(exportable, null, 2);
+  document.getElementById('exportModalOverlay').classList.add('show');
+  const st = document.getElementById('exportStatus');
+  st.textContent = '';
+  setTimeout(()=>{
+    const ta = document.getElementById('exportText');
+    ta.focus(); ta.select();
+  }, 30);
+}
+function closeExportModal(){
+  document.getElementById('exportModalOverlay').classList.remove('show');
+}
+async function copyExportText(){
+  const ta = document.getElementById('exportText');
+  ta.focus(); ta.select();
+  const st = document.getElementById('exportStatus');
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(ta.value);
+      st.textContent = '복사됨! 채팅으로 돌아가 붙여넣고 "이걸로 확정해줘"라고 말씀하세요.';
+      st.style.color = 'var(--green)';
+    } else if(document.execCommand){
+      document.execCommand('copy');
+      st.textContent = '복사됨. 채팅에 붙여넣어 주세요.';
+      st.style.color = 'var(--green)';
+    } else {
+      throw new Error('clipboard unavailable');
+    }
+  }catch(e){
+    st.textContent = '자동 복사가 막혀 있어요 — 텍스트 칸을 클릭해 전체 선택된 상태에서 Ctrl/Cmd+C로 직접 복사해 주세요.';
+    st.style.color = 'var(--amber)';
+  }
+}
+
+function touchTime(){
+  const now = new Date();
+  const ts = now.toLocaleString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('updateTime').textContent = '마지막 수정: '+ts;
+  document.getElementById('footerTime').textContent = ts;
+}
+
+// ── 저장/불러오기 (localStorage, 기기별 로컬 저장) ──
+// DATA_VERSION: Claude가 "확정" 요청을 받아 이 파일의 STOCKS 기본값을 갱신할 때마다
+// 이 값도 함께 바꿉니다. 그러면 다른 기기에 남아있던 예전 로컬 저장본은 버전이 안 맞아
+// 자동으로 무시되고, 새로 배포된 기본값(=확정된 최신 숫자)이 모든 기기에서 보이게 됩니다.
+const DATA_VERSION = '2026-07-23-02';
+const SAVE_KEY = 'company_tracker_v1';
+
+function saveAll(){
+  localStorage.setItem(SAVE_KEY, JSON.stringify({ version: DATA_VERSION, stocks: STOCKS, savedAt: new Date().toISOString() }));
+  const st = document.getElementById('saveStatus');
+  st.textContent = '이 기기에 저장됨: '+new Date().toLocaleString('ko-KR');
+  st.style.color = 'var(--green)';
+  setTimeout(()=>{ st.style.color='var(--text3)'; },3000);
+}
+function loadAll(){
+  const raw = localStorage.getItem(SAVE_KEY);
+  if(!raw){ alert('이 기기에 저장된 데이터가 없습니다. 먼저 [저장]을 눌러주세요.'); return; }
+  const saved = JSON.parse(raw);
+  if(saved.version !== DATA_VERSION || !Array.isArray(saved.stocks)){
+    alert('이 페이지가 그 사이 업데이트되어, 이 기기에 저장된 이전 값은 최신 화면과 맞지 않습니다. 최신 기본값을 표시합니다.');
+    return;
+  }
+  STOCKS = saved.stocks; // 종목 추가/삭제까지 포함해 통째로 교체
+  if(openId && !STOCKS.find(x=>x.id===openId)) openId = null;
+  renderSummary(); renderDetails();
+  const st = document.getElementById('saveStatus');
+  st.textContent = '불러옴: '+new Date().toLocaleString('ko-KR');
+  st.style.color = 'var(--blue)';
+  setTimeout(()=>{ st.style.color='var(--text3)'; },3000);
+}
+function resetAll(){
+  if(!confirm('이 기기에 저장된 입력값을 지우고 초기 상태로 되돌릴까요? (직접 추가한 종목도 사라집니다)')) return;
+  localStorage.removeItem(SAVE_KEY);
+  location.reload();
+}
+
+// ── 시작 시 자동 복원: 이 기기의 저장본이 있고, 현재 페이지 버전과 일치할 때만 적용 ──
+// 버전이 다르면(=Claude가 다른 기기에서 확정해 페이지를 갱신한 경우) 무시하고
+// 방금 배포된 최신 기본값(DEFAULT_STOCKS)을 그대로 보여줍니다 → 기기 간 숫자가 어긋나지 않습니다.
+// STOCKS를 통째로 교체하므로 직접 추가/삭제한 종목도 이 기기에서는 그대로 복원됩니다.
+(function autoLoad(){
+  loadSettings();
+  const raw = localStorage.getItem(SAVE_KEY);
+  if(raw){
+    try{
+      const saved = JSON.parse(raw);
+      if(saved.version === DATA_VERSION && Array.isArray(saved.stocks)){
+        STOCKS = saved.stocks;
+      }
+    }catch(e){}
+  }
+  renderSummary();
+  renderDetails();
+  touchTime();
+})();
+</script>
+</body>
+</html>
