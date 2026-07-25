@@ -877,16 +877,16 @@ const STOCKS_DRIVE_FILENAME = 'company_tracker_data.json';
 let stocksDriveFileId = null;
 
 async function findStocksDriveFile(){
-  if(stocksDriveFileId) return stocksDriveFileId;
   const q = encodeURIComponent(`name='${STOCKS_DRIVE_FILENAME}' and trashed=false`);
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&spaces=drive`, {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&spaces=drive&orderBy=modifiedTime desc`, {
     headers: { 'Authorization': 'Bearer ' + googleAccessToken }
   });
   if(!res.ok) throw new Error('HTTP ' + res.status);
   const data = await res.json();
-  const f = data.files && data.files[0];
+  const files = data.files || [];
+  const f = files[0];
   stocksDriveFileId = f ? f.id : null;
-  return stocksDriveFileId;
+  return { fileId: stocksDriveFileId, extras: files.slice(1).map(x=>x.id) };
 }
 
 async function syncStocksToDrive(){
@@ -894,28 +894,30 @@ async function syncStocksToDrive(){
   const st = document.getElementById('saveStatus');
   try{
     const payload = JSON.stringify({ version: DATA_VERSION, stocks: STOCKS, savedAt: new Date().toISOString() });
-    const fileId = await findStocksDriveFile();
-    let res;
-    if(fileId){
-      res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-        method: 'PATCH',
-        headers: { 'Authorization': 'Bearer ' + googleAccessToken, 'Content-Type': 'application/json' },
-        body: payload
-      });
-    } else {
-      const metadata = { name: STOCKS_DRIVE_FILENAME, mimeType: 'application/json' };
-      const form = new FormData();
-      form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'}));
-      form.append('file', new Blob([payload], {type:'application/json'}));
-      res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + googleAccessToken },
-        body: form
-      });
-    }
+    // 기존 파일을 수정(PATCH)하는 대신, 이미지 업로드와 같은 방식(새 파일 생성용 POST)으로 통일합니다.
+    // PATCH 방식이 일부 환경에서 "Failed to fetch"(요청이 아예 안 나가는 오류)를 일으키는 경우가 있어,
+    // 이미 안정적으로 검증된 멀티파트 POST 업로드 방식으로 맞췄습니다.
+    const { fileId: oldFileId, extras } = await findStocksDriveFile().catch(()=>({fileId:null, extras:[]}));
+    const metadata = { name: STOCKS_DRIVE_FILENAME, mimeType: 'application/json' };
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'}));
+    form.append('file', new Blob([payload], {type:'application/json'}));
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + googleAccessToken },
+      body: form
+    });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if(data && data.id) stocksDriveFileId = data.id;
+    // 예전 파일(들)은 정리 차원에서 삭제 시도 — 실패해도 저장 자체는 이미 성공했으므로 무시합니다.
+    const toDelete = [oldFileId, ...(extras||[])].filter(Boolean).filter(id=>id!==stocksDriveFileId);
+    toDelete.forEach(id=>{
+      fetch(`https://www.googleapis.com/drive/v3/files/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + googleAccessToken }
+      }).catch(()=>{});
+    });
     if(st){ st.textContent = '클라우드에 저장됨 — 모든 기기에 반영됩니다 ('+new Date().toLocaleString('ko-KR')+')'; st.style.color = 'var(--green)'; setTimeout(()=>{ st.style.color='var(--text3)'; },3500); }
   }catch(err){
     if(st){ st.textContent = '이 기기에는 저장됐지만 클라우드 동기화는 실패했습니다 (' + (err && err.message || '오류') + ')'; st.style.color = 'var(--red)'; }
@@ -927,7 +929,7 @@ async function pullStocksFromDrive(){
   const st = document.getElementById('saveStatus');
   if(st){ st.textContent = '클라우드 데이터 확인 중...'; st.style.color = 'var(--text2)'; }
   try{
-    const fileId = await findStocksDriveFile();
+    const { fileId } = await findStocksDriveFile();
     if(!fileId){
       // 클라우드에 아직 데이터가 없는 경우(이 계정으로 첫 로그인)에만, 지금 이 기기의 값을 올려 클라우드의 기준으로 삼습니다
       await syncStocksToDrive();
