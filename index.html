@@ -185,7 +185,7 @@ textarea:focus{border-color:var(--amber)}
 </div>
 
 <div class="toolbar">
-  <span class="toolbar-note">💾 입력한 숫자는 이 브라우저에만 자동 저장됩니다. 다른 기기에서도 같은 값을 보려면 "내보내기"로 나온 텍스트를 복사해 채팅에 붙여넣고 "이걸로 확정해줘"라고 말씀하세요.</span>
+  <span class="toolbar-note">💾 "저장"을 누르면 이 기기에 저장되고, 위에서 Google 로그인이 되어 있으면 클라우드에도 자동 저장되어 다른 기기에서도 곧바로 같은 값이 보입니다. 로그인 전이라면 이 기기에만 저장되니, 그 경우엔 "내보내기"로 나온 텍스트를 채팅에 붙여넣어 주세요.</span>
   <button class="btn primary" onclick="saveAll()">저장</button>
   <button class="btn" onclick="loadAll()">불러오기</button>
   <button class="btn" onclick="exportData()">내보내기 (채팅에 붙여넣기용)</button>
@@ -200,7 +200,7 @@ textarea:focus{border-color:var(--amber)}
 </div>
 
 <div class="toolbar">
-  <span class="toolbar-note">🖼️ 밸류에이션 이미지는 이 계정의 Google Drive에 저장되어 PC·모바일 어디서든 자동으로 보입니다. 이미지를 붙여넣거나 파일을 선택하기 전에 아래에서 Google 로그인을 한 번 해주세요 (기기/브라우저별로 1회).</span>
+  <span class="toolbar-note">🖼️ Google 로그인을 하면 밸류에이션 이미지뿐 아니라 "저장" 버튼으로 저장하는 모든 종목 데이터도 이 계정의 Google Drive를 통해 PC·모바일 어디서든 자동으로 동기화됩니다. 기기/브라우저별로 1회 로그인이 필요합니다.</span>
   <button class="btn primary" id="googleLoginBtn" onclick="googleSignIn()">Google 로그인</button>
   <span class="save-status" id="googleLoginStatus">로그인 필요</span>
   <button class="btn" onclick="openSettingsModal()">⚙ 설정</button>
@@ -630,10 +630,14 @@ function renderDetails(){
           <button class="check-del" style="font-size:11px" onclick="removeValuationImage('${s.id}')">이미지 삭제</button>
           ${s.valuationImageDriveId ? `<a href="https://drive.google.com/file/d/${s.valuationImageDriveId}/view" target="_blank" rel="noopener" style="font-size:11px">Drive에서 보기</a>` : ''}
         </div>
-      ` : s.valuationImageDriveId ? `
+      ` : s.valuationImageDriveId ? (googleAccessToken ? `
         <div class="image-drop-empty">이미지 불러오는 중... (Drive에서 가져옵니다)</div>
         <a href="https://drive.google.com/file/d/${s.valuationImageDriveId}/view" target="_blank" rel="noopener" style="font-size:11px">바로 안 보이면 여기서 Drive로 보기</a>
-      ` : `<div class="image-drop-empty">이미지 없음</div>
+      ` : `
+        <div class="image-drop-empty">이 기기에서 아직 로그인하지 않아 이미지를 불러올 수 없습니다</div>
+        <div style="font-size:10.5px;color:var(--text3);margin-top:2px">위 "Google 로그인" 버튼을 눌러주세요</div>
+        <a href="https://drive.google.com/file/d/${s.valuationImageDriveId}/view" target="_blank" rel="noopener" style="font-size:11px">또는 여기서 바로 Drive로 보기</a>
+      `) : `<div class="image-drop-empty">이미지 없음</div>
         <button class="btn" style="margin-top:4px" onclick="document.getElementById('imgFile_${s.id}').click()">파일 선택</button>`}
     </div>
     <div class="field-sub" id="imgStatus_${s.id}" style="margin-top:4px;min-height:14px"></div>
@@ -744,6 +748,14 @@ function ensureGoogleTokenClient(){
         if(resp && resp.access_token){
           googleAccessToken = resp.access_token;
           updateGoogleLoginStatus(true);
+          // 로그인되면 클라우드의 최신 종목 데이터를 자동으로 가져오고,
+          // 지금 열려있는 종목에 이미지가 있으면 그것도 이어서 불러옵니다.
+          pullStocksFromDrive();
+          if(openId){
+            const s = STOCKS.find(x=>x.id===openId);
+            if(s && s.valuationImageDriveId && !s.valuationImage) fetchImageFromDrive(openId);
+          }
+          renderSummary(); renderDetails();
         } else {
           updateGoogleLoginStatus(false);
         }
@@ -856,6 +868,94 @@ async function fetchImageFromDrive(id){
     reader.readAsDataURL(blob);
   }catch(err){ /* 실패해도 화면의 Drive 링크로 대체 확인 가능 */ }
 }
+
+// ── 종목 데이터(숫자·텍스트) 자동 동기화 — 이미지와 같은 방식으로 Drive에 JSON 하나로 저장 ──
+// 파일 하나(company_tracker_data.json)를 이름으로 찾아서, 있으면 업데이트/없으면 새로 만듭니다.
+// "저장"을 누를 때마다 이 기기 localStorage + (로그인 상태면) Drive 양쪽에 반영되고,
+// "Google 로그인"을 할 때마다 Drive의 최신 데이터를 가져와 이 기기와 비교해 더 최신인 쪽을 씁니다.
+const STOCKS_DRIVE_FILENAME = 'company_tracker_data.json';
+let stocksDriveFileId = null;
+
+async function findStocksDriveFile(){
+  if(stocksDriveFileId) return stocksDriveFileId;
+  const q = encodeURIComponent(`name='${STOCKS_DRIVE_FILENAME}' and trashed=false`);
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&spaces=drive`, {
+    headers: { 'Authorization': 'Bearer ' + googleAccessToken }
+  });
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const f = data.files && data.files[0];
+  stocksDriveFileId = f ? f.id : null;
+  return stocksDriveFileId;
+}
+
+async function syncStocksToDrive(){
+  if(!googleAccessToken) return;
+  const st = document.getElementById('saveStatus');
+  try{
+    const payload = JSON.stringify({ version: DATA_VERSION, stocks: STOCKS, savedAt: new Date().toISOString() });
+    const fileId = await findStocksDriveFile();
+    let res;
+    if(fileId){
+      res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + googleAccessToken, 'Content-Type': 'application/json' },
+        body: payload
+      });
+    } else {
+      const metadata = { name: STOCKS_DRIVE_FILENAME, mimeType: 'application/json' };
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'}));
+      form.append('file', new Blob([payload], {type:'application/json'}));
+      res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + googleAccessToken },
+        body: form
+      });
+    }
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if(data && data.id) stocksDriveFileId = data.id;
+    if(st){ st.textContent = '클라우드에 저장됨 — 모든 기기에 반영됩니다 ('+new Date().toLocaleString('ko-KR')+')'; st.style.color = 'var(--green)'; setTimeout(()=>{ st.style.color='var(--text3)'; },3500); }
+  }catch(err){
+    if(st){ st.textContent = '이 기기에는 저장됐지만 클라우드 동기화는 실패했습니다 (' + (err && err.message || '오류') + ')'; st.style.color = 'var(--red)'; }
+  }
+}
+
+async function pullStocksFromDrive(){
+  if(!googleAccessToken) return;
+  try{
+    const fileId = await findStocksDriveFile();
+    if(!fileId){
+      // 클라우드에 아직 데이터가 없으면, 지금 이 기기의 값을 올려서 다른 기기의 기준으로 삼습니다
+      await syncStocksToDrive();
+      return;
+    }
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { 'Authorization': 'Bearer ' + googleAccessToken }
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if(!data || !Array.isArray(data.stocks)) return;
+    const raw = localStorage.getItem(SAVE_KEY);
+    const localSavedAt = raw ? (JSON.parse(raw).savedAt || null) : null;
+    const driveNewer = !localSavedAt || (data.savedAt && new Date(data.savedAt) > new Date(localSavedAt));
+    if(driveNewer){
+      STOCKS = data.stocks;
+      if(openId && !STOCKS.find(x=>x.id===openId)) openId = null;
+      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: DATA_VERSION, stocks: STOCKS, savedAt: data.savedAt || new Date().toISOString() }));
+      renderSummary(); renderDetails(); touchTime();
+      const st = document.getElementById('saveStatus');
+      if(st){ st.textContent = '클라우드의 최신 데이터를 불러왔습니다 ('+new Date().toLocaleString('ko-KR')+')'; st.style.color = 'var(--blue)'; setTimeout(()=>{ st.style.color='var(--text3)'; },4000); }
+    } else {
+      // 이 기기 값이 더 최신이면(또는 같으면) 클라우드를 지금 값으로 갱신해 최신 상태로 맞춥니다
+      await syncStocksToDrive();
+    }
+  }catch(err){
+    // 실패해도 이 기기의 로컬 데이터는 그대로 유지됩니다 — 다음 저장/로그인 때 다시 시도됩니다
+  }
+}
+
 function handleImageFile(id, file){
   if(!file || !file.type.startsWith('image/')){ showImgStatus(id, '이미지 파일이 아닙니다'); return; }
   showImgStatus(id, '이미지 불러오는 중...');
@@ -1070,9 +1170,15 @@ const SAVE_KEY = 'company_tracker_v1';
 function saveAll(){
   localStorage.setItem(SAVE_KEY, JSON.stringify({ version: DATA_VERSION, stocks: STOCKS, savedAt: new Date().toISOString() }));
   const st = document.getElementById('saveStatus');
-  st.textContent = '이 기기에 저장됨: '+new Date().toLocaleString('ko-KR');
-  st.style.color = 'var(--green)';
-  setTimeout(()=>{ st.style.color='var(--text3)'; },3000);
+  if(googleAccessToken){
+    st.textContent = '클라우드에 저장 중...';
+    st.style.color = 'var(--text2)';
+    syncStocksToDrive();
+  } else {
+    st.textContent = '이 기기에 저장됨: '+new Date().toLocaleString('ko-KR')+' (클라우드 동기화하려면 Google 로그인 필요)';
+    st.style.color = 'var(--green)';
+    setTimeout(()=>{ st.style.color='var(--text3)'; },3500);
+  }
 }
 function loadAll(){
   const raw = localStorage.getItem(SAVE_KEY);
