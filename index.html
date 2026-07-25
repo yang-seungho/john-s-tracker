@@ -400,7 +400,12 @@ function withFocusPreserved(fn){
   }
 }
 
-function fmt(n){ if(n===undefined||n===null||isNaN(n)) return '—'; return Math.round(n).toLocaleString(); }
+function fmt(n){
+  if(n===undefined||n===null||isNaN(n)) return '—';
+  // 정수면 그대로, 소수점이 있으면 소수 둘째자리까지 표시 (해외종목 등 소수점 가격 대응)
+  if(Number.isInteger(n)) return n.toLocaleString();
+  return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+}
 function fmt2(n){ if(n===undefined||n===null||isNaN(n)) return '—'; return n.toFixed(2); }
 function pct(n){ if(n===undefined||n===null||isNaN(n)) return '—'; const s=n>=0?'+':''; return s+n.toFixed(1)+'%'; }
 
