@@ -893,7 +893,11 @@ async function syncStocksToDrive(){
   if(!googleAccessToken) return;
   const st = document.getElementById('saveStatus');
   try{
-    const payload = JSON.stringify({ version: DATA_VERSION, stocks: STOCKS, savedAt: new Date().toISOString() });
+    // 이미지의 실제 데이터(용량이 큰 base64 캐시)는 클라우드 JSON에서 제외합니다.
+    // 이미지 원본은 이미 별도로 Drive에 올라가 있고 valuationImageDriveId만 있으면 되므로,
+    // 굳이 여기 또 포함시키면 파일이 불필요하게 커지고 매 저장마다 다시 업로드되어 느려집니다.
+    const stocksForCloud = STOCKS.map(s=>{ const c = Object.assign({}, s); delete c.valuationImage; return c; });
+    const payload = JSON.stringify({ version: DATA_VERSION, stocks: stocksForCloud, savedAt: new Date().toISOString() });
     // 기존 파일을 수정(PATCH)하는 대신, 이미지 업로드와 같은 방식(새 파일 생성용 POST)으로 통일합니다.
     // PATCH 방식이 일부 환경에서 "Failed to fetch"(요청이 아예 안 나가는 오류)를 일으키는 경우가 있어,
     // 이미 안정적으로 검증된 멀티파트 POST 업로드 방식으로 맞췄습니다.
