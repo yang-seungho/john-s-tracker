@@ -185,18 +185,21 @@ textarea:focus{border-color:var(--amber)}
 </div>
 
 <div class="toolbar">
-  <span class="toolbar-note">💾 "저장"을 누르면 이 기기에 저장되고, 위에서 Google 로그인이 되어 있으면 클라우드에도 자동 저장되어 다른 기기에서도 곧바로 같은 값이 보입니다. 로그인 전이라면 이 기기에만 저장되니, 그 경우엔 "내보내기"로 나온 텍스트를 채팅에 붙여넣어 주세요.</span>
+  <span class="toolbar-note">💾 위에서 Google 로그인이 되어 있는 상태로 "저장"을 누르면 클라우드에 자동 저장되어 다른 기기에서도 곧바로 같은 값이 보입니다. 로그인 전이라면 이 기기에만 저장됩니다.</span>
   <button class="btn primary" onclick="saveAll()">저장</button>
-  <button class="btn" onclick="loadAll()">불러오기</button>
-  <button class="btn" onclick="exportData()">내보내기 (채팅에 붙여넣기용)</button>
-  <button class="btn" onclick="resetAll()">초기화</button>
   <span class="save-status" id="saveStatus"></span>
 </div>
 
 <div class="toolbar">
-  <span class="toolbar-note">📈 Alpha Vantage 연동 — 해외종목(NASDAQ·NYSE·NYSE Arca)만 조회됩니다. 국내종목은 API 미지원으로 직접 입력해야 합니다. 무료 키 기준 초당 1회 제한이 있어 종목별로 순서대로 조회합니다.</span>
+  <span class="toolbar-note">📈 Alpha Vantage 연동 — 해외종목(NASDAQ·NYSE·NYSE Arca)만 조회됩니다. 무료 키 기준 초당 1회 제한이 있어 종목별로 순서대로 조회합니다.</span>
   <button class="btn primary" id="priceUpdateBtn" onclick="updateOverseasPrices()">해외종목 가격 업데이트</button>
   <span class="save-status" id="priceUpdateStatus"></span>
+</div>
+
+<div class="toolbar">
+  <span class="toolbar-note">🇰🇷 국내종목(KOSPI·KOSDAQ) 가격 업데이트 — 네이버 증권의 비공식 데이터를 가져옵니다. 공식 API가 아니라 언제든 중단될 수 있으니 실패하면 알려주세요 (확인 필요).</span>
+  <button class="btn primary" id="krxUpdateBtn" onclick="updateDomesticPrices()">국내종목 가격 업데이트</button>
+  <span class="save-status" id="krxUpdateStatus"></span>
 </div>
 
 <div class="toolbar">
@@ -776,7 +779,10 @@ function googleSignIn(){
     alert('Google 로그인 스크립트를 아직 불러오는 중입니다. 몇 초 후 다시 눌러주세요.');
     return;
   }
-  client.requestAccessToken({ prompt: googleAccessToken ? '' : 'consent' });
+  // prompt를 항상 빈 값으로 두면, 이전에 이미 동의한 적이 있는 경우 구글이 그 사실을 기억해서
+  // "액세스 요청" 화면 없이 곧바로(또는 계정 선택 정도만 거쳐) 로그인됩니다.
+  // (한 번도 동의한 적 없는 계정이면 이때도 필요할 때만 자동으로 동의 화면을 보여줍니다.)
+  client.requestAccessToken({ prompt: '' });
 }
 function updateGoogleLoginStatus(loggedIn){
   const el = document.getElementById('googleLoginStatus');
@@ -1064,6 +1070,66 @@ async function updateOverseasPrices(){
   btn.style.opacity = '1';
   statusEl.style.color = 'var(--green)';
   statusEl.textContent = `업데이트 완료: ${new Date().toLocaleString('ko-KR')} (해외 ${targets.length}종목)`;
+  touchTime();
+}
+
+// ── 국내종목(KOSPI·KOSDAQ) 가격 자동 업데이트 ──
+// KRX/네이버는 일반적인 웹사이트에서 브라우저로 직접 호출하면 CORS(교차출처)로 막혀 있어서,
+// 공개 CORS 프록시(allorigins.win)를 한 겹 거쳐서 네이버 증권의 비공식 API를 불러옵니다.
+// 정식으로 문서화된 API가 아니라서 응답 형식이 예고 없이 바뀌거나 막힐 수 있습니다 — 실패하면 알려주시면 바로 고치겠습니다.
+const DOMESTIC_MARKETS = ['KOSPI','KOSDAQ'];
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+
+async function updateDomesticPrices(){
+  const statusEl = document.getElementById('krxUpdateStatus');
+  const btn = document.getElementById('krxUpdateBtn');
+  const targets = STOCKS.filter(s => DOMESTIC_MARKETS.includes(s.market));
+  if(targets.length===0){
+    statusEl.textContent = '자동 업데이트 대상 국내종목이 없습니다 (시장이 KOSPI/KOSDAQ인 종목만 대상).';
+    return;
+  }
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+
+  for(let i=0;i<targets.length;i++){
+    const s = targets[i];
+    statusEl.style.color = 'var(--text2)';
+    statusEl.textContent = `${s.name}(${s.ticker}) 조회 중… (${i+1}/${targets.length})`;
+    try{
+      const target = `https://m.stock.naver.com/api/stock/${s.ticker}/basic`;
+      const res = await fetch(CORS_PROXY + encodeURIComponent(target));
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      // 필드명이 문서화되어 있지 않아 여러 후보를 시도합니다.
+      const rawPrice = data.closePrice ?? data.now ?? (data.dealTrendInfos && data.dealTrendInfos[0] && data.dealTrendInfos[0].closePrice);
+      const price = rawPrice!=null ? parseFloat(String(rawPrice).replace(/,/g,'')) : NaN;
+      const rawChg = data.fluctuationsRatio ?? (data.compareToPreviousClosePrice) ?? null;
+
+      if(!isNaN(price) && price>0){
+        s.price = price;
+        s.log = s.log || [];
+        const now = new Date();
+        const ds = now.toLocaleDateString('ko-KR',{year:'2-digit',month:'2-digit',day:'2-digit'});
+        const chg = rawChg!=null ? ` (전일대비 ${rawChg}%)` : '';
+        s.log.push({date:ds, text:`자동 업데이트(네이버, 비공식 API — 확인 필요): 현재가 ${price}${chg}`});
+      } else {
+        statusEl.textContent = `${s.name}: 응답 형식을 해석하지 못함 — 원본 일부: ${JSON.stringify(data).slice(0,150)}`;
+        statusEl.style.color = 'var(--amber)';
+      }
+    } catch(e){
+      statusEl.textContent = `${s.name}: 조회 실패 (${(e && e.message) || e})`;
+      statusEl.style.color = 'var(--red)';
+    }
+    renderSummary();
+    if(openId===s.id) renderDetails();
+    if(i < targets.length-1) await sleep(400);
+  }
+
+  saveAll();
+  btn.disabled = false;
+  btn.style.opacity = '1';
+  statusEl.style.color = 'var(--green)';
+  statusEl.textContent = `업데이트 완료: ${new Date().toLocaleString('ko-KR')} (국내 ${targets.length}종목, 비공식 API — 값 확인 권장)`;
   touchTime();
 }
 
