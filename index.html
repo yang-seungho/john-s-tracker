@@ -924,10 +924,12 @@ async function syncStocksToDrive(){
 
 async function pullStocksFromDrive(){
   if(!googleAccessToken) return;
+  const st = document.getElementById('saveStatus');
+  if(st){ st.textContent = '클라우드 데이터 확인 중...'; st.style.color = 'var(--text2)'; }
   try{
     const fileId = await findStocksDriveFile();
     if(!fileId){
-      // 클라우드에 아직 데이터가 없으면, 지금 이 기기의 값을 올려서 다른 기기의 기준으로 삼습니다
+      // 클라우드에 아직 데이터가 없는 경우(이 계정으로 첫 로그인)에만, 지금 이 기기의 값을 올려 클라우드의 기준으로 삼습니다
       await syncStocksToDrive();
       return;
     }
@@ -936,23 +938,18 @@ async function pullStocksFromDrive(){
     });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    if(!data || !Array.isArray(data.stocks)) return;
-    const raw = localStorage.getItem(SAVE_KEY);
-    const localSavedAt = raw ? (JSON.parse(raw).savedAt || null) : null;
-    const driveNewer = !localSavedAt || (data.savedAt && new Date(data.savedAt) > new Date(localSavedAt));
-    if(driveNewer){
-      STOCKS = data.stocks;
-      if(openId && !STOCKS.find(x=>x.id===openId)) openId = null;
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ version: DATA_VERSION, stocks: STOCKS, savedAt: data.savedAt || new Date().toISOString() }));
-      renderSummary(); renderDetails(); touchTime();
-      const st = document.getElementById('saveStatus');
-      if(st){ st.textContent = '클라우드의 최신 데이터를 불러왔습니다 ('+new Date().toLocaleString('ko-KR')+')'; st.style.color = 'var(--blue)'; setTimeout(()=>{ st.style.color='var(--text3)'; },4000); }
-    } else {
-      // 이 기기 값이 더 최신이면(또는 같으면) 클라우드를 지금 값으로 갱신해 최신 상태로 맞춥니다
-      await syncStocksToDrive();
-    }
+    if(!data || !Array.isArray(data.stocks)) throw new Error('클라우드 데이터 형식 오류');
+    // 로그인 시점에는 항상 클라우드 값을 기준으로 맞춥니다.
+    // (기기 시계로 "어느 쪽이 더 최신인지" 자체 판단하면, 시계가 어긋난 기기가 오히려
+    //  오래된 데이터로 클라우드를 덮어쓸 수 있어 — 그런 사고를 막기 위해 로그인=항상 다운로드로 고정합니다.
+    //  이 기기에서 한 수정을 클라우드에 올리고 싶으면 "저장" 버튼을 눌러야 합니다.)
+    STOCKS = data.stocks;
+    if(openId && !STOCKS.find(x=>x.id===openId)) openId = null;
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ version: DATA_VERSION, stocks: STOCKS, savedAt: data.savedAt || new Date().toISOString() }));
+    renderSummary(); renderDetails(); touchTime();
+    if(st){ st.textContent = '클라우드의 최신 데이터를 불러왔습니다 ('+new Date().toLocaleString('ko-KR')+')'; st.style.color = 'var(--blue)'; setTimeout(()=>{ st.style.color='var(--text3)'; },4000); }
   }catch(err){
-    // 실패해도 이 기기의 로컬 데이터는 그대로 유지됩니다 — 다음 저장/로그인 때 다시 시도됩니다
+    if(st){ st.textContent = '클라우드 데이터를 불러오지 못했습니다 (' + (err && err.message || '오류') + ') — 이 기기의 값은 그대로 유지됩니다'; st.style.color = 'var(--red)'; }
   }
 }
 
