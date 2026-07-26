@@ -197,7 +197,7 @@ textarea:focus{border-color:var(--amber)}
 </div>
 
 <div class="toolbar">
-  <span class="toolbar-note">🇰🇷 국내종목(KOSPI·KOSDAQ) 가격 업데이트 — 네이버 증권의 비공식 데이터를 가져옵니다. 공식 API가 아니라 언제든 중단될 수 있으니 실패하면 알려주세요 (확인 필요).</span>
+  <span class="toolbar-note">🇰🇷 국내종목(KOSPI·KOSDAQ) 가격 업데이트 — 설정(⚙)에 증권사 프록시 URL을 넣으면 키움증권 공식 API로, 비워두면 네이버 비공식 데이터로 조회합니다.</span>
   <button class="btn primary" id="krxUpdateBtn" onclick="updateDomesticPrices()">국내종목 가격 업데이트</button>
   <span class="save-status" id="krxUpdateStatus"></span>
 </div>
@@ -268,10 +268,15 @@ textarea:focus{border-color:var(--amber)}
       <input id="set_avkey" type="text" placeholder="예: ABC123XYZ" oninput="saveSetting('avKey', this.value)">
       <div class="field-sub">alphavantage.co에서 무료로 발급받은 키를 붙여넣으세요. 하루 25회 제한입니다.</div>
     </div>
-    <div class="field">
+    <div class="field" style="margin-bottom:10px">
       <div class="field-label">Google OAuth 클라이언트 ID</div>
       <input id="set_googleClientId" type="text" placeholder="예: 1234567890-abc.apps.googleusercontent.com" oninput="saveSetting('googleClientId', this.value)">
       <div class="field-sub">Google Cloud Console에서 발급받은 값입니다. 보통 한 번만 입력하면 됩니다.</div>
+    </div>
+    <div class="field">
+      <div class="field-label">증권사 프록시 URL — 국내종목용 (키움 REST API)</div>
+      <input id="set_kisProxyUrl" type="text" placeholder="예: https://xxxx.yourname.workers.dev" oninput="saveSetting('kisProxyUrl', this.value)">
+      <div class="field-sub">Cloudflare Worker 배포 후 나온 URL을 넣으면 국내종목 가격을 키움증권 API로 정확히 가져옵니다. 비워두면 네이버 방식(비공식)으로 대신 조회합니다.</div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
       <button class="btn primary" onclick="closeSettingsModal()">닫기</button>
@@ -713,13 +718,13 @@ function removeCheckItem(id, idx){
 // ── 설정 (Alpha Vantage 키, Google OAuth 클라이언트 ID) — 이 기기에만 저장 ──
 const DEFAULT_GOOGLE_CLIENT_ID = '95765774730-srka6ufr4ik78riavmgs3cp39t6caa5s.apps.googleusercontent.com'; // OAuth 클라이언트 ID는 공개돼도 안전합니다
 const SETTINGS_KEY = 'company_tracker_settings_v1';
-let SETTINGS = { avKey:'', googleClientId: DEFAULT_GOOGLE_CLIENT_ID };
+let SETTINGS = { avKey:'', googleClientId: DEFAULT_GOOGLE_CLIENT_ID, kisProxyUrl:'' };
 function loadSettings(){
   try{
     const raw = localStorage.getItem(SETTINGS_KEY);
     if(raw){
       const parsed = JSON.parse(raw);
-      SETTINGS = Object.assign({avKey:'', googleClientId: DEFAULT_GOOGLE_CLIENT_ID}, parsed);
+      SETTINGS = Object.assign({avKey:'', googleClientId: DEFAULT_GOOGLE_CLIENT_ID, kisProxyUrl:''}, parsed);
       if(!SETTINGS.googleClientId) SETTINGS.googleClientId = DEFAULT_GOOGLE_CLIENT_ID;
     }
   }catch(e){}
@@ -731,6 +736,7 @@ function saveSetting(key, val){
 function openSettingsModal(){
   document.getElementById('set_avkey').value = SETTINGS.avKey || '';
   document.getElementById('set_googleClientId').value = SETTINGS.googleClientId || '';
+  document.getElementById('set_kisProxyUrl').value = SETTINGS.kisProxyUrl || '';
   document.getElementById('settingsModalOverlay').classList.add('show');
 }
 function closeSettingsModal(){
@@ -1074,9 +1080,8 @@ async function updateOverseasPrices(){
 }
 
 // ── 국내종목(KOSPI·KOSDAQ) 가격 자동 업데이트 ──
-// KRX/네이버는 일반적인 웹사이트에서 브라우저로 직접 호출하면 CORS(교차출처)로 막혀 있어서,
-// 공개 CORS 프록시(allorigins.win)를 한 겹 거쳐서 네이버 증권의 비공식 API를 불러옵니다.
-// 정식으로 문서화된 API가 아니라서 응답 형식이 예고 없이 바뀌거나 막힐 수 있습니다 — 실패하면 알려주시면 바로 고치겠습니다.
+// 설정(⚙)에 "증권사 프록시 URL"이 입력되어 있으면 키움증권 공식 API(정확)를 우선 사용하고,
+// 비어있으면 네이버 증권 비공식 API(부정확할 수 있음)로 대신 조회합니다.
 const DOMESTIC_MARKETS = ['KOSPI','KOSDAQ'];
 const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 
@@ -1090,7 +1095,71 @@ async function updateDomesticPrices(){
   }
   btn.disabled = true;
   btn.style.opacity = '0.6';
+  try{
+    if(SETTINGS.kisProxyUrl){
+      await updateDomesticPricesViaKIS(targets, statusEl);
+    } else {
+      await updateDomesticPricesViaNaver(targets, statusEl);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+  }
+}
 
+// 방법 A: 한국투자증권 공식 API (Cloudflare Worker 프록시를 통해 호출 — 정확도 높음)
+async function updateDomesticPricesViaKIS(targets, statusEl){
+  statusEl.style.color = 'var(--text2)';
+  statusEl.textContent = `키움 API로 ${targets.length}개 종목 조회 중…`;
+  try{
+    const codes = targets.map(s=>s.ticker).join(',');
+    const proxyUrl = SETTINGS.kisProxyUrl.replace(/\/+$/,'') + '/?codes=' + encodeURIComponent(codes);
+    const res = await fetch(proxyUrl);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    const results = data.results || [];
+    let successCount = 0;
+    let lastIssue = '';
+    const now = new Date();
+    const ds = now.toLocaleDateString('ko-KR',{year:'2-digit',month:'2-digit',day:'2-digit'});
+    for(const r of results){
+      const s = targets.find(x=>x.ticker===r.code);
+      if(!s) continue;
+      if(r.error){ lastIssue = `${s.name}: ${r.error}`; continue; }
+      const price = Number(r.price);
+      if(!isNaN(price) && price>0){
+        s.price = price;
+        successCount++;
+        s.log = s.log || [];
+        const chg = r.changePct!=null ? ` (전일대비 ${r.changePct}%)` : '';
+        s.log.push({date:ds, text:`자동 업데이트(키움 API): 현재가 ${price}${chg}`});
+      } else {
+        lastIssue = `${s.name}: 가격 값 이상 — ${JSON.stringify(r).slice(0,150)}`;
+      }
+    }
+    saveAll();
+    renderSummary();
+    renderDetails();
+    if(successCount === targets.length){
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = `업데이트 완료(키움 API): ${new Date().toLocaleString('ko-KR')} (국내 ${targets.length}종목)`;
+    } else if(successCount === 0){
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = `키움 API 업데이트 실패 (0/${targets.length} 성공) — ${lastIssue}`;
+    } else {
+      statusEl.style.color = 'var(--amber)';
+      statusEl.textContent = `일부만 성공 (${successCount}/${targets.length}) — 마지막 문제: ${lastIssue}`;
+    }
+    touchTime();
+  }catch(e){
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = `키움 프록시 호출 실패 (${(e && e.message) || e}) — 설정의 프록시 URL/Worker 상태를 확인해주세요`;
+  }
+}
+
+// 방법 B: 네이버 증권 비공식 API (키움 프록시 URL을 아직 설정하지 않았을 때의 대체 수단)
+async function updateDomesticPricesViaNaver(targets, statusEl){
   let successCount = 0;
   let lastIssue = '';
 
@@ -1128,12 +1197,10 @@ async function updateDomesticPrices(){
   }
 
   saveAll();
-  btn.disabled = false;
-  btn.style.opacity = '1';
   // 하나라도 실패하면 "완료"라고 뜨지 않도록, 실제 성공/실패 개수를 반영해 문구를 정직하게 보여줍니다.
   if(successCount === targets.length){
     statusEl.style.color = 'var(--green)';
-    statusEl.textContent = `업데이트 완료: ${new Date().toLocaleString('ko-KR')} (국내 ${targets.length}종목, 비공식 API — 값 확인 권장)`;
+    statusEl.textContent = `업데이트 완료(네이버, 비공식): ${new Date().toLocaleString('ko-KR')} (국내 ${targets.length}종목 — 값 확인 권장)`;
   } else if(successCount === 0){
     statusEl.style.color = 'var(--red)';
     statusEl.textContent = `국내종목 업데이트 실패 (0/${targets.length} 성공) — ${lastIssue}`;
