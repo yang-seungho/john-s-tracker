@@ -228,7 +228,17 @@ textarea:focus{border-color:var(--amber)}
     <div class="field-grid">
       <div class="field"><div class="field-label">종목명 *</div><input id="add_name" type="text" placeholder="예: 한화오션"></div>
       <div class="field"><div class="field-label">티커/종목코드 *</div><input id="add_ticker" type="text" placeholder="예: 042660"></div>
-      <div class="field"><div class="field-label">시장</div><input id="add_market" type="text" placeholder="예: KOSPI"></div>
+      <div class="field"><div class="field-label">시장</div>
+        <select id="add_market">
+          <option value="KOSPI">KOSPI (국내)</option>
+          <option value="KOSDAQ">KOSDAQ (국내)</option>
+          <option value="NASDAQ">NASDAQ (해외)</option>
+          <option value="NYSE">NYSE (해외)</option>
+          <option value="NYSE Arca">NYSE Arca (해외)</option>
+          <option value="기타">기타 (자동가격조회 미지원)</option>
+        </select>
+        <div class="field-sub">여기서 정확히 골라야 가격 자동조회 대상에 포함됩니다</div>
+      </div>
       <div class="field"><div class="field-label">다음 실적(예상)</div><input id="add_earn" type="text" placeholder="예: 2026-08-14"></div>
     </div>
     <div class="field" style="margin-top:10px">
@@ -1218,7 +1228,8 @@ function openAddModal(){
 }
 function closeAddModal(){
   document.getElementById('addModalOverlay').classList.remove('show');
-  ['add_name','add_ticker','add_market','add_earn','add_note'].forEach(id=>{ document.getElementById(id).value=''; });
+  ['add_name','add_ticker','add_earn','add_note'].forEach(id=>{ document.getElementById(id).value=''; });
+  document.getElementById('add_market').selectedIndex = 0;
 }
 function slugify(str){
   const base = (str||'').toLowerCase().replace(/[^a-z0-9가-힣]+/g,'_').replace(/^_+|_+$/g,'');
