@@ -608,7 +608,7 @@ function renderDetails(){
         <input type="date" value="${s.thesisDate||''}" id="in_thesisDate_${s.id}" oninput="updateField('${s.id}','thesisDate',this.value)">
       </div>
     </div>
-    <textarea id="in_thesisNote_${s.id}" placeholder="강화/훼손 판단 근거를 적어두면 다음에 볼 때 바로 기억납니다" oninput="updateField('${s.id}','thesisNote',this.value)">${s.thesisNote||''}</textarea>
+    <textarea id="in_thesisNote_${s.id}" placeholder="강화/훼손 판단 근거를 적어두면 다음에 볼 때 바로 기억납니다" oninput="updateFieldQuiet('${s.id}','thesisNote',this.value)">${s.thesisNote||''}</textarea>
 
     <div class="section-label">다음 실적 체크포인트</div>
     <div class="field-sub" style="margin-bottom:6px">다음 실적 발표 때 반드시 확인할 지표를 적어두세요. 체크박스로 확인 여부를 표시할 수 있습니다.</div>
@@ -626,6 +626,13 @@ function renderDetails(){
     </div>
 
     <div class="section-label">3분할 매수/매도 계획 — 차수별 목표 PER 직접 입력</div>
+    <div class="field" style="max-width:220px;margin-bottom:8px">
+      <div class="field-label">기준연도 (매수·매도 공통)</div>
+      <select id="in_valYearIdx2_${s.id}" onchange="updateField('${s.id}','valYearIdx',this.value)">
+        ${YEARS.map((y,i)=>`<option value="${i}" ${((s.valYearIdx!=null?s.valYearIdx:1)===i)?'selected':''}>${y}년</option>`).join('')}
+      </select>
+      <div class="field-sub">아래 매수/매도 1~3차 PER 전부 이 연도 EPS 기준으로 계산됩니다 (위 EPS 트래킹 연도 선택과 동일한 값)</div>
+    </div>
     <div class="field-sub" style="margin-bottom:8px">각 차수의 목표 PER을 입력하면 "기준연도 EPS × 그 PER"로 가격이 자동 계산됩니다. 1차 목표주가(=매도 1차 가격)는 현재가 대비 ${isNaN(g)?'—':pct(g)}입니다.</div>
     <div class="band-row">
       ${[0,1,2].map(i=>`
@@ -683,6 +690,15 @@ function updateField(id, key, val){
   else if(key==='valYearIdx') s[key] = parseInt(val,10)||0;
   else s[key] = val;
   withFocusPreserved(()=>{ renderSummary(); renderDetails(); });
+  touchTime();
+}
+// 한글 등 조합형(IME) 입력 중인 textarea/input에서는 renderDetails()로 DOM을
+// 통째로 다시 그리면 조합 중인 글자가 낱자로 쪼개져 보이는 문제가 있어(예: 황 → ㅎㅗㅏㅇ),
+// 화면 재렌더링 없이 값만 조용히 저장합니다. (다른 곳에서 이 값을 계산에 쓰지 않는
+// 순수 텍스트 필드에만 사용)
+function updateFieldQuiet(id, key, val){
+  const s = STOCKS.find(x=>x.id===id);
+  s[key] = val;
   touchTime();
 }
 function updateVal(id, arrKey, idx, val){
