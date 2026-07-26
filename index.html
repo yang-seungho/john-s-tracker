@@ -543,7 +543,12 @@ function renderDetails(){
   <div class="detail open" id="detail_${s.id}">
     <div class="detail-head">
       <div>
-        <span class="detail-title">${s.name}<span class="detail-ticker">${s.ticker} · ${s.market}</span></span>
+        <span class="detail-title">${s.name}<span class="detail-ticker">${s.ticker} ·
+          <select id="in_market_${s.id}" onchange="updateField('${s.id}','market',this.value)" style="font-size:11px;padding:1px 4px;font-family:ui-monospace,monospace">
+            ${MARKET_OPTIONS.map(m=>`<option value="${m}" ${s.market===m?'selected':''}>${m}</option>`).join('')}
+          </select>
+          ${MARKET_OPTIONS.includes(s.market)?'':`<span style="color:var(--down,#e5484d)">⚠ 기존값 "${s.market}" — 위에서 정확한 시장을 다시 선택해주세요</span>`}
+        </span></span>
         <div class="detail-note">${s.note}</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
@@ -1020,6 +1025,9 @@ function openImageModal(id){
 function closeImageModal(){
   document.getElementById('imageModalOverlay').classList.remove('show');
 }
+
+// ── 시장 구분값 (종목 상세/추가 화면의 드롭다운과 가격조회 필터가 공유) ──
+const MARKET_OPTIONS = ['KOSPI','KOSDAQ','NASDAQ','NYSE','NYSE Arca','기타'];
 
 // ── 해외종목 가격 자동 업데이트 (Alpha Vantage REST API 직접 호출) ──
 const AV_MARKETS = ['NASDAQ','NYSE','NYSE Arca'];
