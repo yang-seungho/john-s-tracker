@@ -57,10 +57,12 @@ body{background:var(--bg);color:var(--text1);
 .badge.up{background:var(--green-dim);color:var(--green)}
 .badge.down{background:var(--red-dim);color:var(--red)}
 .badge.flat{background:var(--gray-dim);color:var(--text2)}
-.sum-price-row{display:flex;gap:10px;margin-top:9px}
-.sum-price-block{flex:1}
-.sum-price-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
-.sum-price-val{font-family:ui-monospace,monospace;font-size:15px;font-weight:700;margin-top:2px}
+.sum-price-row{display:flex;gap:6px;margin-top:9px}
+.sum-price-block{flex:1;min-width:0}
+.sum-price-label{font-size:8.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+.sum-price-val{font-family:ui-monospace,monospace;font-size:13px;font-weight:700;margin-top:2px}
+.sum-price-val.buy{color:var(--green)}
+.sum-price-val.sell{color:var(--red)}
 .sum-gap{font-family:ui-monospace,monospace;font-size:19px;font-weight:600;margin-top:9px}
 .sum-gap.buy{color:var(--green)}
 .sum-gap.sell{color:var(--red)}
@@ -469,6 +471,7 @@ function renderSummary(){
   grid.innerHTML = STOCKS.map(s=>{
     const g = gapPct(s);
     const t1 = primaryTarget(s);
+    const buy1 = buyPriceArr(s)[0] || 0;
     const badgeCls = THESIS_COLOR[s.thesisStatus] || 'flat';
     const gapCls = isNaN(g) ? 'hold' : (g<0? 'buy':(g>15?'sell':'hold'));
     const earnCls = isEarningsSoon(s) ? 'soon' : '';
@@ -483,12 +486,16 @@ function renderSummary(){
           <div class="sum-price-val">${s.price>0?fmt(s.price):'—'}</div>
         </div>
         <div class="sum-price-block">
-          <div class="sum-price-label">1차 목표주가</div>
-          <div class="sum-price-val">${t1>0?fmt(t1):'—'}</div>
+          <div class="sum-price-label">매수 1차</div>
+          <div class="sum-price-val buy">${buy1>0?fmt(buy1):'—'}</div>
+        </div>
+        <div class="sum-price-block">
+          <div class="sum-price-label">매도 1차</div>
+          <div class="sum-price-val sell">${t1>0?fmt(t1):'—'}</div>
         </div>
       </div>
       <div class="sum-gap ${gapCls}">${isNaN(g)?'—':pct(g)}</div>
-      <div class="sum-sub">현재가 대비 1차 목표주가 괴리율</div>
+      <div class="sum-sub">현재가 대비 매도 1차 목표주가 괴리율</div>
       <div class="sum-earn ${earnCls}">다음 실적: ${s.nextEarnings}${earnCls?' ⚠ 임박':''}</div>
     </div>`;
   }).join('') + `<div class="sum-card add-card" onclick="openAddModal()">
