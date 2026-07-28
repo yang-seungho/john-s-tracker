@@ -522,7 +522,7 @@ function yearRow(s){
     return `<td>${lab}${isBasis?' <span class="badge flat" style="font-size:8.5px">기준</span>':''}</td>
       <td class="r"><input class="ci" type="text" inputmode="decimal" value="${cur||''}" placeholder="0"
         id="in_yearEPS_${s.id}_${i}"
-        oninput="updateVal('${s.id}','yearEPS',${i},this.value)"></td>
+        oninput="updateValQuiet('${s.id}','yearEPS',${i},this.value)" onblur="updateVal('${s.id}','yearEPS',${i},this.value)"></td>
       <td class="r">${trendHtml}</td>`;
   });
 }
@@ -561,7 +561,7 @@ function renderDetails(){
     <div class="field-grid">
       <div class="field">
         <div class="field-label">현재가</div>
-        <input type="text" inputmode="decimal" value="${s.price||''}" placeholder="0" id="in_price_${s.id}" oninput="updateField('${s.id}','price',this.value)">
+        <input type="text" inputmode="decimal" value="${s.price||''}" placeholder="0" id="in_price_${s.id}" oninput="updateFieldQuiet('${s.id}','price',this.value)" onblur="updateField('${s.id}','price',this.value)">
         <div class="field-sub">다음 실적: ${s.nextEarnings}</div>
       </div>
       <div class="field">
@@ -608,7 +608,7 @@ function renderDetails(){
         <input type="date" value="${s.thesisDate||''}" id="in_thesisDate_${s.id}" oninput="updateField('${s.id}','thesisDate',this.value)">
       </div>
     </div>
-    <textarea id="in_thesisNote_${s.id}" placeholder="강화/훼손 판단 근거를 적어두면 다음에 볼 때 바로 기억납니다" oninput="updateFieldQuiet('${s.id}','thesisNote',this.value)">${s.thesisNote||''}</textarea>
+    <textarea id="in_thesisNote_${s.id}" placeholder="강화/훼손 판단 근거를 적어두면 다음에 볼 때 바로 기억납니다" oninput="updateFieldQuiet('${s.id}','thesisNote',this.value)">${(s.thesisNote!=null && s.thesisNote!=='') ? s.thesisNote : DEFAULT_THESIS_NOTE}</textarea>
 
     <div class="section-label">다음 실적 체크포인트</div>
     <div class="field-sub" style="margin-bottom:6px">다음 실적 발표 때 반드시 확인할 지표를 적어두세요. 체크박스로 확인 여부를 표시할 수 있습니다.</div>
@@ -639,7 +639,7 @@ function renderDetails(){
       <div class="band-chip buy">
         <div class="band-chip-label">매수 ${i+1}차 PER</div>
         <input class="ci sm" type="text" inputmode="decimal" value="${s.buyPERs[i]||''}" placeholder="0"
-          id="in_buyPERs_${s.id}_${i}" oninput="updateVal('${s.id}','buyPERs',${i},this.value)">
+          id="in_buyPERs_${s.id}_${i}" oninput="updateValQuiet('${s.id}','buyPERs',${i},this.value)" onblur="updateVal('${s.id}','buyPERs',${i},this.value)">
         <div class="band-chip-price">${buyP[i]>0?fmt(buyP[i]):'—'}</div>
       </div>`).join('')}
     </div>
@@ -648,7 +648,7 @@ function renderDetails(){
       <div class="band-chip sell">
         <div class="band-chip-label">매도 ${i+1}차 PER</div>
         <input class="ci sm" type="text" inputmode="decimal" value="${s.sellPERs[i]||''}" placeholder="0"
-          id="in_sellPERs_${s.id}_${i}" oninput="updateVal('${s.id}','sellPERs',${i},this.value)">
+          id="in_sellPERs_${s.id}_${i}" oninput="updateValQuiet('${s.id}','sellPERs',${i},this.value)" onblur="updateVal('${s.id}','sellPERs',${i},this.value)">
         <div class="band-chip-price">${sellP[i]>0?fmt(sellP[i]):'—'}</div>
       </div>`).join('')}
     </div>
@@ -692,19 +692,28 @@ function updateField(id, key, val){
   withFocusPreserved(()=>{ renderSummary(); renderDetails(); });
   touchTime();
 }
-// 한글 등 조합형(IME) 입력 중인 textarea/input에서는 renderDetails()로 DOM을
-// 통째로 다시 그리면 조합 중인 글자가 낱자로 쪼개져 보이는 문제가 있어(예: 황 → ㅎㅗㅏㅇ),
-// 화면 재렌더링 없이 값만 조용히 저장합니다. (다른 곳에서 이 값을 계산에 쓰지 않는
-// 순수 텍스트 필드에만 사용)
+// renderDetails()로 DOM을 통째로 다시 그리면, 타이핑 도중인 입력창의 값이
+// (1) 한글 조합(IME) 중이면 낱자로 쪼개지고(예: 황 → ㅎㅗㅏㅇ),
+// (2) 소수점 입력 중이면 "1." 같은 중간 상태가 즉시 parseFloat되어 "1"로 되돌아가서
+//     소수점 자체를 입력할 수 없는 것처럼 보이는 문제가 있습니다.
+// 그래서 타이핑 중(oninput)에는 값만 저장하고 화면은 다시 그리지 않다가,
+// 입력을 마치고 다른 곳을 클릭(onblur)하는 순간에만 화면을 갱신합니다.
 function updateFieldQuiet(id, key, val){
   const s = STOCKS.find(x=>x.id===id);
-  s[key] = val;
+  if(key==='price') s[key] = parseFloat(val)||0;
+  else if(key==='valYearIdx') s[key] = parseInt(val,10)||0;
+  else s[key] = val;
   touchTime();
 }
 function updateVal(id, arrKey, idx, val){
   const s = STOCKS.find(x=>x.id===id);
   s[arrKey][idx] = parseFloat(val)||0;
   withFocusPreserved(()=>{ renderSummary(); renderDetails(); });
+  touchTime();
+}
+function updateValQuiet(id, arrKey, idx, val){
+  const s = STOCKS.find(x=>x.id===id);
+  s[arrKey][idx] = parseFloat(val)||0;
   touchTime();
 }
 function addLog(id){
@@ -1044,6 +1053,9 @@ function closeImageModal(){
 
 // ── 시장 구분값 (종목 상세/추가 화면의 드롭다운과 가격조회 필터가 공유) ──
 const MARKET_OPTIONS = ['KOSPI','KOSDAQ','NASDAQ','NYSE','NYSE Arca','기타'];
+
+// ── 투자아이디어 비고란 기본 템플릿 (비어있을 때만 표시, 입력 시작하면 사용자가 직접 수정) ──
+const DEFAULT_THESIS_NOTE = '반영된것: \n반영안된것: ';
 
 // ── 해외종목 가격 자동 업데이트 (Alpha Vantage REST API 직접 호출) ──
 const AV_MARKETS = ['NASDAQ','NYSE','NYSE Arca'];
